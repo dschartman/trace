@@ -25,39 +25,41 @@ uv sync
 ```
 
 ### Testing (Test-First Development)
+**IMPORTANT**: Always use `uv run` prefix for Python commands to ensure correct environment.
+
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run with coverage report
-pytest --cov=trace --cov-report=html
+uv run pytest --cov=trace --cov-report=html
 
 # Run specific test file
-pytest tests/test_ids.py
+uv run pytest tests/test_ids.py
 
 # Run specific test
-pytest tests/test_ids.py::test_generate_id_detects_collision
+uv run pytest tests/test_ids.py::test_generate_id_detects_collision
 
 # Run in verbose mode
-pytest -v
+uv run pytest -v
 
 # Run integration tests only
-pytest tests/test_integration.py
+uv run pytest tests/test_integration.py
 
-# Watch mode (requires pytest-watch)
-ptw
+# Run Python scripts
+uv run python trc_main.py <command>
 ```
 
 ### Code Quality
 ```bash
 # Linting
-ruff check .
+uv run ruff check .
 
 # Type checking
-ty check .
+uv run ty check .
 
 # Format code
-ruff format .
+uv run ruff format .
 ```
 
 ## Architecture

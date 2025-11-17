@@ -46,6 +46,18 @@ $ trc ready
 myapp-def456 [P2] Research OAuth libraries
 ```
 
+## For AI Agents
+
+Trace is designed specifically for AI workflows. Run `trc guide` to get integration instructions for your CLAUDE.md file.
+
+**Key principles for agents:**
+- Use trace proactively - don't wait for users to ask
+- Prefer trace over TodoWrite for non-trivial work
+- Start with natural granularity, reorganize as understanding evolves
+- Think of trace as your external memory across sessions
+
+See [AI Agent Integration Guide](docs/ai-agent-guide.md) for comprehensive guidance.
+
 ## Key Features
 
 ### Cross-Project Dependencies

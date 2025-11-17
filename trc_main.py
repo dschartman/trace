@@ -1724,6 +1724,67 @@ def cli_move(issue_id: str, target_project_name: str):
     return 0
 
 
+def cli_guide() -> int:
+    """Display AI agent integration guide."""
+    guide_text = """
+═══════════════════════════════════════════════════════════════════════════════
+                    Trace (trc) - AI Agent Integration Guide
+═══════════════════════════════════════════════════════════════════════════════
+
+Add this to your project's CLAUDE.md file for AI agent integration:
+
+───────────────────────────────────────────────────────────────────────────────
+
+## Using Trace for Work Tracking
+
+This project uses [Trace](https://github.com/dschartman/trace) (`trc` command)
+for issue tracking and work planning across sessions.
+
+**When to use trace:**
+- Breaking down features into sub-tasks
+- Tracking bugs or improvements discovered during exploration
+- Planning work that will span multiple sessions
+- Coordinating work with dependencies in other projects
+- Anything you'd use TodoWrite for that's non-trivial
+
+**Granularity Philosophy:**
+Start with whatever feels natural. Create a parent for "Add authentication",
+then children for "Research OAuth libraries", "Implement Google login", etc.
+If breakdown is too fine-grained, reparent issues. If too coarse, break them down.
+
+**Structure is fluid, not rigid** - reorganization is trivial, so let structure
+evolve naturally as understanding grows.
+
+**Proactive Usage:**
+Use trace early and often without waiting for explicit requests. If you're
+planning work, use trace. If you discover issues, use trace. Think of it as
+your external memory for work across sessions.
+
+**Prefer trace over TodoWrite** for anything non-trivial. TodoWrite is for
+immediate, single-session task tracking. Trace is for everything else.
+
+**Key commands:**
+- `trc create "title" --parent <id>` - Create work items
+- `trc ready` - See what's ready to work on (not blocked)
+- `trc tree <id>` - View breakdown of a feature
+- `trc show <id>` - See full details including dependencies
+- `trc list` - List all issues in current project
+- `trc close <id>` - Mark work as complete
+
+**Cross-project:**
+- `trc create "title" --depends-on <other-project-id>` - Link dependencies
+- `trc ready --all` - See ready work across all projects
+- `trc move <id> <project>` - Move work between projects
+
+───────────────────────────────────────────────────────────────────────────────
+
+For more details on Trace philosophy and workflows:
+  https://github.com/dschartman/trace
+"""
+    print(guide_text)
+    return 0
+
+
 def main() -> int:
     """Main CLI entry point."""
     if len(sys.argv) < 2:
@@ -1747,16 +1808,19 @@ def main() -> int:
         print("    --status <status>                 Set status")
         print("  trc reparent <id> <parent>      Change parent (use 'none' to remove)")
         print("  trc move <id> <project>         Move issue to different project")
+        print("  trc guide                       Show AI agent integration guide")
         return 0
 
     command = sys.argv[1]
 
-    if command == "init":
+    if command == "guide":
+        return cli_guide()
+    elif command == "init":
         return cli_init()
     elif command == "create":
         if len(sys.argv) < 3:
             print("Error: Title required")
-            print("Usage: trccreate <title> [options]")
+            print("Usage: trc create <title> [options]")
             return 1
 
         # Parse title (everything before first flag)
@@ -1812,13 +1876,13 @@ def main() -> int:
     elif command == "show":
         if len(sys.argv) < 3:
             print("Error: Issue ID required")
-            print("Usage: trcshow <id>")
+            print("Usage: trc show <id>")
             return 1
         return cli_show(sys.argv[2])
     elif command == "close":
         if len(sys.argv) < 3:
             print("Error: Issue ID required")
-            print("Usage: trcclose <id>")
+            print("Usage: trc close <id>")
             return 1
         return cli_close(sys.argv[2])
     elif command == "ready":
@@ -1827,13 +1891,13 @@ def main() -> int:
     elif command == "tree":
         if len(sys.argv) < 3:
             print("Error: Issue ID required")
-            print("Usage: trctree <id>")
+            print("Usage: trc tree <id>")
             return 1
         return cli_tree(sys.argv[2])
     elif command == "update":
         if len(sys.argv) < 3:
             print("Error: Issue ID required")
-            print("Usage: trcupdate <id> [--title <title>] [--priority <0-4>] [--status <status>]")
+            print("Usage: trc update <id> [--title <title>] [--priority <0-4>] [--status <status>]")
             return 1
 
         issue_id = sys.argv[2]
@@ -1865,7 +1929,7 @@ def main() -> int:
     elif command == "reparent":
         if len(sys.argv) < 4:
             print("Error: Issue ID and parent ID required")
-            print("Usage: trcreparent <id> <parent-id>")
+            print("Usage: trc reparent <id> <parent-id>")
             print("       tr reparent <id> none    (to remove parent)")
             return 1
 
@@ -1882,7 +1946,7 @@ def main() -> int:
     elif command == "move":
         if len(sys.argv) < 4:
             print("Error: Issue ID and target project required")
-            print("Usage: trcmove <id> <project-name>")
+            print("Usage: trc move <id> <project-name>")
             return 1
 
         issue_id = sys.argv[2]
