@@ -10,13 +10,13 @@
 
 ```bash
 # View all work across all projects
-$ trace list --all
+$ trc list --all
 
 # View ready work by project
-$ trace ready --all --by-project
+$ trc ready --all --by-project
 
 # Create cross-project dependencies
-$ trace create "Use new API" --project myapp --depends-on mylib-abc123
+$ trc create "Use new API" --project myapp --depends-on mylib-abc123
 ```
 
 **Implementation**:
@@ -35,18 +35,18 @@ $ trace create "Use new API" --project myapp --depends-on mylib-abc123
 
 ```bash
 # Create parent
-$ trace create "Add authentication"
+$ trc create "Add authentication"
 → myapp-abc123
 
 # Add children
-$ trace create "Research libraries" --parent myapp-abc123
-$ trace create "Implement OAuth" --parent myapp-abc123
+$ trc create "Research libraries" --parent myapp-abc123
+$ trc create "Implement OAuth" --parent myapp-abc123
 
 # Children can have children (arbitrary depth)
-$ trace create "Google OAuth" --parent myapp-def456
+$ trc create "Google OAuth" --parent myapp-def456
 
 # View tree structure
-$ trace tree myapp-abc123
+$ trc tree myapp-abc123
 myapp-abc123 Add authentication
 ├─ myapp-def456 Research libraries
 └─ myapp-ghi789 Implement OAuth
@@ -69,16 +69,16 @@ myapp-abc123 Add authentication
 ```bash
 # In a project directory
 $ cd ~/Repos/myapp
-$ trace create "Fix bug"
+$ trc create "Fix bug"
 # → Automatically tagged as project: myapp
 
 # Outside a project
 $ cd ~
-$ trace create "Personal task"
+$ trc create "Personal task"
 # → Goes to 'default' project (discovery inbox)
 
 # Override detection
-$ trace create "Something else" --project other-project
+$ trc create "Something else" --project other-project
 ```
 
 **Implementation**:
@@ -98,17 +98,17 @@ $ trace create "Something else" --project other-project
 
 ```bash
 # First use (anywhere)
-$ trace create "Explore distributed caching"
+$ trc create "Explore distributed caching"
 ? Initialize trace? (Y/n) y
 Created default-abc123 in default project
 
 # Later, create real project
 $ mkdir ~/Repos/distcache && cd ~/Repos/distcache
-$ trace init
+$ trc init
 Initialized project: distcache
 
 # Move work from default to real project
-$ trace move default-abc123 --to-project distcache
+$ trc move default-abc123 --to-project distcache
 Moved default-abc123 → distcache-abc123
 ```
 
@@ -116,7 +116,7 @@ Moved default-abc123 → distcache-abc123
 - Default project lives at `~/.trace/default/`
 - Auto-created on first use outside a git repo
 - Standard project (has JSONL file, can be queried)
-- `trace move` command promotes issues to real projects
+- `trc move` command promotes issues to real projects
 
 ---
 
@@ -154,7 +154,7 @@ Moved default-abc123 → distcache-abc123
 **Solution**: 6-character hash IDs with collision detection.
 
 ```bash
-$ trace create "Add tests"
+$ trc create "Add tests"
 → myapp-7k3m2x  # Short, readable, unique
 ```
 
@@ -189,19 +189,19 @@ def generate_id(title: str, project: str) -> str:
 
 ```bash
 # Blocking dependencies
-$ trace create "Deploy to prod" --depends-on myapp-abc123
+$ trc create "Deploy to prod" --depends-on myapp-abc123
 → Blocked until myapp-abc123 is closed
 
 # Parent-child (hierarchical)
-$ trace create "Subtask" --parent myapp-abc123
+$ trc create "Subtask" --parent myapp-abc123
 
 # Related (informational)
-$ trace relate myapp-abc123 myapp-def456
+$ trc relate myapp-abc123 myapp-def456
 ```
 
 **Ready work** = no open blocking dependencies:
 ```bash
-$ trace ready
+$ trc ready
 myapp-abc123 [P1] Fix auth bug        ✓ ready
 myapp-def456 [P0] Deploy to prod      ⏸ blocked by myapp-abc123
 ```
@@ -221,7 +221,7 @@ myapp-def456 [P0] Deploy to prod      ⏸ blocked by myapp-abc123
 **Solution**: Parent issues automatically track child completion.
 
 ```bash
-$ trace tree myapp-abc123
+$ trc tree myapp-abc123
 myapp-abc123 Add authentication [open] (2/4 complete)
 ├─ myapp-def456 Research libraries [closed]
 ├─ myapp-ghi789 Design schema [closed]
@@ -229,7 +229,7 @@ myapp-abc123 Add authentication [open] (2/4 complete)
 └─ myapp-mno345 Add tests [open]
 
 # Can't close parent until children done
-$ trace close myapp-abc123
+$ trc close myapp-abc123
 Error: Cannot close issue with open children:
   - myapp-jkl012 [in_progress]
   - myapp-mno345 [open]
@@ -238,7 +238,7 @@ Error: Cannot close issue with open children:
 **Implementation**:
 - Query child status before allowing parent close
 - Optional: Auto-close parent when last child closes
-- `trace tree` shows completion percentage
+- `trc tree` shows completion percentage
 
 ---
 
@@ -250,17 +250,17 @@ Error: Cannot close issue with open children:
 
 ```bash
 # Move issue to different project
-$ trace move default-abc123 --to-project myapp
+$ trc move default-abc123 --to-project myapp
 
 # Change parent
-$ trace reparent myapp-abc123 --parent myapp-xyz999
+$ trc reparent myapp-abc123 --parent myapp-xyz999
 
 # Add/remove dependencies
-$ trace update myapp-abc123 --depends-on mylib-def456
-$ trace update myapp-abc123 --remove-dependency mylib-def456
+$ trc update myapp-abc123 --depends-on mylib-def456
+$ trc update myapp-abc123 --remove-dependency mylib-def456
 
 # Bulk operations
-$ trace reparent myapp-* --parent myapp-parent123
+$ trc reparent myapp-* --parent myapp-parent123
 ```
 
 **Implementation**:
@@ -279,16 +279,16 @@ $ trace reparent myapp-* --parent myapp-parent123
 
 ```bash
 # Create with priority
-$ trace create "Critical bug" --priority 0
+$ trc create "Critical bug" --priority 0
 
 # Update priority
-$ trace update myapp-abc123 --priority 1
+$ trc update myapp-abc123 --priority 1
 
 # View by priority
-$ trace list --priority 0
+$ trc list --priority 0
 
 # Ready work (sorted by priority)
-$ trace ready
+$ trc ready
 myapp-abc123 [P0] Critical security fix
 myapp-def456 [P1] New feature
 myapp-ghi789 [P2] Code cleanup
@@ -315,7 +315,7 @@ myapp-ghi789 [P2] Code cleanup
 Issues support multi-line descriptions for context:
 
 ```bash
-$ trace create "Add caching" --description "$(cat <<EOF
+$ trc create "Add caching" --description "$(cat <<EOF
 Need to add Redis caching to improve API response times.
 
 Requirements:
@@ -358,38 +358,38 @@ Expose trace as MCP server for Claude Code:
 
 ```bash
 # Create multiple issues from file
-$ trace import issues.md
+$ trc import issues.md
 
 # Bulk updates
-$ trace update "myapp-*" --label "refactoring"
+$ trc update "myapp-*" --label "refactoring"
 
 # Template-based creation
-$ trace template feature "Add notifications"
+$ trc template feature "Add notifications"
 → Creates parent + standard children
 ```
 
 ### 14. Time Tracking
 
 ```bash
-$ trace start myapp-abc123  # Start timer
-$ trace stop               # Stop and log time
-$ trace time myapp-abc123  # Show time spent
+$ trc start myapp-abc123  # Start timer
+$ trc stop               # Stop and log time
+$ trc time myapp-abc123  # Show time spent
 ```
 
 ### 15. Advanced Queries
 
 ```bash
 # Complex filters
-$ trace list --status open --priority 0,1 --assigned-to me
+$ trc list --status open --priority 0,1 --assigned-to me
 
 # Date ranges
-$ trace list --created-after 2025-01-01
+$ trc list --created-after 2025-01-01
 
 # Full-text search
-$ trace search "authentication bug"
+$ trc search "authentication bug"
 
 # JSON output for scripting
-$ trace list --json | jq '.[] | select(.priority == 0)'
+$ trc list --json | jq '.[] | select(.priority == 0)'
 ```
 
 ---
@@ -440,7 +440,7 @@ with open("~/.trace/.lock", 'w') as f:
 1. **Corrupted SQLite Database**
    - Rebuild from available JSONL files
    - Accept loss of cross-project metadata (new users rebuild anyway)
-   - User runs `trace sync --force-import` per project
+   - User runs `trc sync --force-import` per project
 
 2. **Malformed JSONL Lines**
    - Skip bad lines with warnings
@@ -455,7 +455,7 @@ with open("~/.trace/.lock", 'w') as f:
 4. **Project Directory Moved/Renamed**
    - Requires manual re-registration
    - Only "default" project is auto-registered
-   - User must run `trace init` in new location or manually update project registry
+   - User must run `trc init` in new location or manually update project registry
 
 5. **Merge Conflicts in JSONL**
    - Treat like code conflicts

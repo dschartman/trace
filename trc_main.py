@@ -6,11 +6,12 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Set, Dict
+from typing import Any, Optional, Set, Dict
 
 
 class IDCollisionError(Exception):
@@ -152,7 +153,7 @@ def file_lock(lock_path: Path, timeout: float = 5.0):
         # Release lock and close file
         try:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-        except:
+        except Exception:
             pass
         lock_file.close()
 
@@ -465,7 +466,7 @@ def create_issue(
     description: str = "",
     status: str = "open",
     priority: int = 2,
-) -> Dict[str, any]:
+) -> Optional[Dict[str, Any]]:
     """Create a new issue.
 
     Args:
@@ -514,7 +515,7 @@ def create_issue(
     return get_issue(db, issue_id)
 
 
-def get_issue(db: sqlite3.Connection, issue_id: str) -> Optional[Dict[str, any]]:
+def get_issue(db: sqlite3.Connection, issue_id: str) -> Optional[Dict[str, Any]]:
     """Get issue by ID.
 
     Args:
@@ -537,7 +538,7 @@ def list_issues(
     db: sqlite3.Connection,
     project_id: Optional[str] = None,
     status: Optional[str] = None,
-) -> list[Dict[str, any]]:
+) -> list[Dict[str, Any]]:
     """List issues with optional filtering.
 
     Args:
@@ -709,7 +710,7 @@ def remove_dependency(
 def get_dependencies(
     db: sqlite3.Connection,
     issue_id: str,
-) -> list[Dict[str, any]]:
+) -> list[Dict[str, Any]]:
     """Get all dependencies for an issue.
 
     Args:
@@ -729,7 +730,7 @@ def get_dependencies(
 def get_children(
     db: sqlite3.Connection,
     parent_id: str,
-) -> list[Dict[str, any]]:
+) -> list[Dict[str, Any]]:
     """Get all child issues of a parent.
 
     Args:
@@ -752,7 +753,7 @@ def get_children(
 def get_blockers(
     db: sqlite3.Connection,
     issue_id: str,
-) -> list[Dict[str, any]]:
+) -> list[Dict[str, Any]]:
     """Get all issues that block this issue.
 
     Args:
@@ -874,7 +875,7 @@ def reparent_issue(
     # Check for cycle if setting a new parent
     if new_parent_id is not None:
         if detect_cycle(db, issue_id, new_parent_id):
-            raise ValueError(f"Cannot reparent: would create a cycle")
+            raise ValueError("Cannot reparent: would create a cycle")
 
     # Remove existing parent dependency
     db.execute(
@@ -1058,7 +1059,7 @@ def import_from_jsonl(
             try:
                 issue_data = json.loads(line)
                 issues_to_import.append(issue_data)
-            except json.JSONDecodeError as e:
+            except json.JSONDecodeError:
                 stats["errors"] += 1
                 # Continue processing other lines
 
@@ -1108,7 +1109,7 @@ def import_from_jsonl(
                 )
                 stats["updated"] += 1
 
-        except Exception as e:
+        except Exception:
             stats["errors"] += 1
 
     db.commit()
@@ -1131,7 +1132,7 @@ def import_from_jsonl(
                     (issue_id, dep["depends_on_id"], dep["type"], now),
                 )
 
-        except Exception as e:
+        except Exception:
             # Dependency errors don't increment error count
             pass
 
@@ -1167,7 +1168,7 @@ def cli_init():
 
     if project is None:
         print("Error: Not in a git repository")
-        print("Run 'git init' first or use 'trace init' inside a git repo")
+        print("Run 'git init' first or use 'trc init' inside a git repo")
         return 1
 
     # Create .trace directory
@@ -1202,7 +1203,7 @@ def cli_create(title: str, description: str = "", priority: int = 2, status: str
 
     if project is None:
         print("Error: Not in a git repository")
-        print("Run 'trace init' first")
+        print("Run 'trc init' first")
         return 1
 
     lock_path = get_lock_path()
@@ -1223,6 +1224,11 @@ def cli_create(title: str, description: str = "", priority: int = 2, status: str
             priority=priority,
             status=status,
         )
+
+        if not issue:
+            print("Error: Failed to create issue")
+            db.close()
+            return 1
 
         # Add parent dependency if specified
         if parent:
@@ -1335,14 +1341,14 @@ def cli_show(issue_id: str):
             print(f"\nDescription:\n{issue['description']}")
 
         if deps:
-            print(f"\nDependencies:")
+            print("\nDependencies:")
             for dep in deps:
                 dep_issue = get_issue(db, dep["depends_on_id"])
                 dep_title = dep_issue["title"] if dep_issue else "(unknown)"
                 print(f"  {dep['type']:8} {dep['depends_on_id']} - {dep_title}")
 
         if children:
-            print(f"\nChildren:")
+            print("\nChildren:")
             for child in children:
                 status_marker = {
                     "open": "○",
@@ -1384,7 +1390,7 @@ def cli_close(issue_id: str):
         if has_open_children(db, issue_id):
             children = get_children(db, issue_id)
             open_children = [c for c in children if c["status"] != "closed"]
-            print(f"Error: Cannot close issue with open children:")
+            print("Error: Cannot close issue with open children:")
             for child in open_children:
                 print(f"  - {child['id']}: {child['title']} [{child['status']}]")
             db.close()
@@ -1573,13 +1579,14 @@ def cli_update(issue_id: str, title: Optional[str] = None, description: Optional
         set_last_sync_time(db, project_path, time.time())
 
         updated = get_issue(db, issue_id)
-        print(f"Updated {issue_id}:")
-        if title:
-            print(f"  Title: {updated['title']}")
-        if priority is not None:
-            print(f"  Priority: {updated['priority']}")
-        if status:
-            print(f"  Status: {updated['status']}")
+        if updated:
+            print(f"Updated {issue_id}:")
+            if title:
+                print(f"  Title: {updated['title']}")
+            if priority is not None:
+                print(f"  Priority: {updated['priority']}")
+            if status:
+                print(f"  Status: {updated['status']}")
 
         db.close()
 
@@ -1678,7 +1685,7 @@ def cli_move(issue_id: str, target_project_name: str):
 
         if row is None:
             print(f"Error: Project '{target_project_name}' not found in registry")
-            print("Hint: Run 'trace init' in the target project first")
+            print("Hint: Run 'trc init' in the target project first")
             db.close()
             return 1
 
@@ -1717,41 +1724,40 @@ def cli_move(issue_id: str, target_project_name: str):
     return 0
 
 
-if __name__ == "__main__":
-    import sys
-
+def main() -> int:
+    """Main CLI entry point."""
     if len(sys.argv) < 2:
-        print("Trace - Minimal distributed issue tracker")
+        print("trc - Minimal distributed issue tracker")
         print("\nUsage:")
-        print("  trace init                        Initialize project")
-        print("  trace create <title> [options]    Create issue")
+        print("  trc init                        Initialize project")
+        print("  trc create <title> [options]    Create issue")
         print("    --description <text>              Detailed description")
         print("    --priority <0-4>                  Priority level (default: 2)")
         print("    --parent <id>                     Parent issue ID")
         print("    --depends-on <id>                 Blocking dependency ID")
         print("    --status <status>                 Initial status (default: open)")
-        print("  trace list [--all]                List issues")
-        print("  trace show <id>                   Show issue details")
-        print("  trace close <id>                  Close issue")
-        print("  trace ready [--all]               Show ready work (not blocked)")
-        print("  trace tree <id>                   Show issue tree")
-        print("  trace update <id> [options]       Update issue")
+        print("  trc list [--all]                List issues")
+        print("  trc show <id>                   Show issue details")
+        print("  trc close <id>                  Close issue")
+        print("  trc ready [--all]               Show ready work (not blocked)")
+        print("  trc tree <id>                   Show issue tree")
+        print("  trc update <id> [options]       Update issue")
         print("    --title <title>                   Set title")
         print("    --priority <0-4>                  Set priority")
         print("    --status <status>                 Set status")
-        print("  trace reparent <id> <parent>      Change parent (use 'none' to remove)")
-        print("  trace move <id> <project>         Move issue to different project")
-        sys.exit(0)
+        print("  trc reparent <id> <parent>      Change parent (use 'none' to remove)")
+        print("  trc move <id> <project>         Move issue to different project")
+        return 0
 
     command = sys.argv[1]
 
     if command == "init":
-        sys.exit(cli_init())
+        return cli_init()
     elif command == "create":
         if len(sys.argv) < 3:
             print("Error: Title required")
-            print("Usage: trace create <title> [options]")
-            sys.exit(1)
+            print("Usage: trccreate <title> [options]")
+            return 1
 
         # Parse title (everything before first flag)
         title_parts = []
@@ -1762,7 +1768,7 @@ if __name__ == "__main__":
 
         if not title_parts:
             print("Error: Title required")
-            sys.exit(1)
+            return 1
 
         title = " ".join(title_parts)
 
@@ -1782,7 +1788,7 @@ if __name__ == "__main__":
                     priority = int(sys.argv[i + 1])
                 except ValueError:
                     print("Error: Priority must be a number 0-4")
-                    sys.exit(1)
+                    return 1
                 i += 2
             elif sys.argv[i] == "--status" and i + 1 < len(sys.argv):
                 status = sys.argv[i + 1]
@@ -1795,40 +1801,40 @@ if __name__ == "__main__":
                 i += 2
             else:
                 print(f"Unknown option: {sys.argv[i]}")
-                sys.exit(1)
+                return 1
 
         # Pass to cli_create
-        sys.exit(cli_create(title, description=description, priority=priority,
-                            status=status, parent=parent, depends_on=depends_on))
+        return cli_create(title, description=description, priority=priority,
+                          status=status, parent=parent, depends_on=depends_on)
     elif command == "list":
         all_flag = "--all" in sys.argv
-        sys.exit(cli_list(all_projects=all_flag))
+        return cli_list(all_projects=all_flag)
     elif command == "show":
         if len(sys.argv) < 3:
             print("Error: Issue ID required")
-            print("Usage: trace show <id>")
-            sys.exit(1)
-        sys.exit(cli_show(sys.argv[2]))
+            print("Usage: trcshow <id>")
+            return 1
+        return cli_show(sys.argv[2])
     elif command == "close":
         if len(sys.argv) < 3:
             print("Error: Issue ID required")
-            print("Usage: trace close <id>")
-            sys.exit(1)
-        sys.exit(cli_close(sys.argv[2]))
+            print("Usage: trcclose <id>")
+            return 1
+        return cli_close(sys.argv[2])
     elif command == "ready":
         all_flag = "--all" in sys.argv
-        sys.exit(cli_ready(all_projects=all_flag))
+        return cli_ready(all_projects=all_flag)
     elif command == "tree":
         if len(sys.argv) < 3:
             print("Error: Issue ID required")
-            print("Usage: trace tree <id>")
-            sys.exit(1)
-        sys.exit(cli_tree(sys.argv[2]))
+            print("Usage: trctree <id>")
+            return 1
+        return cli_tree(sys.argv[2])
     elif command == "update":
         if len(sys.argv) < 3:
             print("Error: Issue ID required")
-            print("Usage: trace update <id> [--title <title>] [--priority <0-4>] [--status <status>]")
-            sys.exit(1)
+            print("Usage: trcupdate <id> [--title <title>] [--priority <0-4>] [--status <status>]")
+            return 1
 
         issue_id = sys.argv[2]
         title = None
@@ -1846,22 +1852,22 @@ if __name__ == "__main__":
                     priority = int(sys.argv[i + 1])
                 except ValueError:
                     print("Error: Priority must be a number 0-4")
-                    sys.exit(1)
+                    return 1
                 i += 2
             elif sys.argv[i] == "--status" and i + 1 < len(sys.argv):
                 status = sys.argv[i + 1]
                 i += 2
             else:
                 print(f"Unknown option: {sys.argv[i]}")
-                sys.exit(1)
+                return 1
 
-        sys.exit(cli_update(issue_id, title=title, priority=priority, status=status))
+        return cli_update(issue_id, title=title, priority=priority, status=status)
     elif command == "reparent":
         if len(sys.argv) < 4:
             print("Error: Issue ID and parent ID required")
-            print("Usage: trace reparent <id> <parent-id>")
-            print("       trace reparent <id> none    (to remove parent)")
-            sys.exit(1)
+            print("Usage: trcreparent <id> <parent-id>")
+            print("       tr reparent <id> none    (to remove parent)")
+            return 1
 
         issue_id = sys.argv[2]
         parent_arg = sys.argv[3]
@@ -1872,18 +1878,22 @@ if __name__ == "__main__":
         else:
             new_parent_id = parent_arg
 
-        sys.exit(cli_reparent(issue_id, new_parent_id))
+        return cli_reparent(issue_id, new_parent_id)
     elif command == "move":
         if len(sys.argv) < 4:
             print("Error: Issue ID and target project required")
-            print("Usage: trace move <id> <project-name>")
-            sys.exit(1)
+            print("Usage: trcmove <id> <project-name>")
+            return 1
 
         issue_id = sys.argv[2]
         target_project = sys.argv[3]
 
-        sys.exit(cli_move(issue_id, target_project))
+        return cli_move(issue_id, target_project)
     else:
         print(f"Unknown command: {command}")
-        print("Run 'trace' for usage information")
-        sys.exit(1)
+        print("Run 'trc' for usage information")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

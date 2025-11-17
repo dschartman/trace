@@ -39,7 +39,7 @@ def db_connection(tmp_trace_dir):
 
     Automatically initializes schema and closes connection after test completes.
     """
-    from trace import init_database
+    from trc_main import init_database
 
     db_path = tmp_trace_dir["db"]
     conn = init_database(str(db_path))

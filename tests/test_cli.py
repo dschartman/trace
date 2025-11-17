@@ -18,7 +18,7 @@ def extract_issue_id(output: str) -> str:
 
 def test_cli_init_creates_trace_directory(sample_project, tmp_trace_dir, monkeypatch):
     """cli_init should create .trace directory."""
-    from trace import cli_init
+    from trc_main import cli_init
 
     monkeypatch.chdir(sample_project["path"])
 
@@ -31,7 +31,7 @@ def test_cli_init_creates_trace_directory(sample_project, tmp_trace_dir, monkeyp
 
 def test_cli_init_outside_git_repo(tmp_path, tmp_trace_dir, monkeypatch):
     """cli_init should fail outside git repo."""
-    from trace import cli_init
+    from trc_main import cli_init
 
     non_git_dir = tmp_path / "not-a-repo"
     non_git_dir.mkdir()
@@ -44,7 +44,7 @@ def test_cli_init_outside_git_repo(tmp_path, tmp_trace_dir, monkeypatch):
 
 def test_cli_create_basic_issue(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_create should create issue with title."""
-    from trace import cli_init, cli_create
+    from trc_main import cli_init, cli_create
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -60,7 +60,7 @@ def test_cli_create_basic_issue(sample_project, tmp_trace_dir, monkeypatch, caps
 
 def test_cli_create_with_parent(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_create should link to parent."""
-    from trace import cli_init, cli_create, get_db, get_dependencies
+    from trc_main import cli_init, cli_create, get_db, get_dependencies
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -91,7 +91,7 @@ def test_cli_create_with_parent(sample_project, tmp_trace_dir, monkeypatch, caps
 
 def test_cli_list_shows_issues(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_list should display issues."""
-    from trace import cli_init, cli_create, cli_list
+    from trc_main import cli_init, cli_create, cli_list
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -111,7 +111,7 @@ def test_cli_list_shows_issues(sample_project, tmp_trace_dir, monkeypatch, capsy
 
 def test_cli_list_empty_project(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_list should handle empty project."""
-    from trace import cli_init, cli_list
+    from trc_main import cli_init, cli_list
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -126,7 +126,7 @@ def test_cli_list_empty_project(sample_project, tmp_trace_dir, monkeypatch, caps
 
 def test_cli_show_displays_issue_details(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_show should display issue details."""
-    from trace import cli_init, cli_create, cli_show
+    from trc_main import cli_init, cli_create, cli_show
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -148,7 +148,7 @@ def test_cli_show_displays_issue_details(sample_project, tmp_trace_dir, monkeypa
 
 def test_cli_show_nonexistent_issue(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_show should error on nonexistent issue."""
-    from trace import cli_init, cli_show
+    from trc_main import cli_init, cli_show
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -163,7 +163,7 @@ def test_cli_show_nonexistent_issue(sample_project, tmp_trace_dir, monkeypatch, 
 
 def test_cli_close_closes_issue(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_close should close an issue."""
-    from trace import cli_init, cli_create, cli_close, get_db, get_issue
+    from trc_main import cli_init, cli_create, cli_close, get_db, get_issue
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -186,7 +186,7 @@ def test_cli_close_closes_issue(sample_project, tmp_trace_dir, monkeypatch, caps
 
 def test_cli_update_changes_fields(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_update should modify issue fields."""
-    from trace import cli_init, cli_create, cli_update, get_db, get_issue
+    from trc_main import cli_init, cli_create, cli_update, get_db, get_issue
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -210,7 +210,7 @@ def test_cli_update_changes_fields(sample_project, tmp_trace_dir, monkeypatch, c
 
 def test_cli_reparent_changes_parent(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_reparent should change parent."""
-    from trace import cli_init, cli_create, cli_reparent, get_db, get_dependencies
+    from trc_main import cli_init, cli_create, cli_reparent, get_db, get_dependencies
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -248,7 +248,7 @@ def test_cli_reparent_changes_parent(sample_project, tmp_trace_dir, monkeypatch,
 
 def test_cli_reparent_detects_cycle(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_reparent should prevent cycles."""
-    from trace import cli_init, cli_create, cli_reparent
+    from trc_main import cli_init, cli_create, cli_reparent
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -276,7 +276,7 @@ def test_cli_reparent_detects_cycle(sample_project, tmp_trace_dir, monkeypatch, 
 
 def test_cli_reparent_remove_parent(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_reparent with None should remove parent."""
-    from trace import cli_init, cli_create, cli_reparent, get_db, get_dependencies
+    from trc_main import cli_init, cli_create, cli_reparent, get_db, get_dependencies
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -308,7 +308,7 @@ def test_cli_reparent_remove_parent(sample_project, tmp_trace_dir, monkeypatch, 
 
 def test_cli_move_changes_project(sample_project, tmp_trace_dir, tmp_path, monkeypatch, capsys):
     """cli_move should move issue to different project."""
-    from trace import cli_init, cli_create, cli_move, get_db, get_issue
+    from trc_main import cli_init, cli_create, cli_move, get_db, get_issue
 
     # Create two projects
     proj1 = sample_project
@@ -365,7 +365,7 @@ def test_cli_move_changes_project(sample_project, tmp_trace_dir, tmp_path, monke
 
 def test_cli_ready_shows_unblocked_work(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_ready should show only unblocked issues."""
-    from trace import cli_init, cli_create, cli_ready, get_db, add_dependency
+    from trc_main import cli_init, cli_create, cli_ready, get_db, add_dependency
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -387,7 +387,7 @@ def test_cli_ready_shows_unblocked_work(sample_project, tmp_trace_dir, monkeypat
     db.commit()
 
     # Export to JSONL so cli_ready can see the dependencies
-    from trace import export_to_jsonl
+    from trc_main import export_to_jsonl
     from pathlib import Path
     trace_dir = Path(sample_project["path"]) / ".trace"
     export_to_jsonl(db, sample_project["path"], str(trace_dir / "issues.jsonl"))
@@ -406,7 +406,7 @@ def test_cli_ready_shows_unblocked_work(sample_project, tmp_trace_dir, monkeypat
 
 def test_cli_tree_shows_hierarchy(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_tree should display parent-child hierarchy."""
-    from trace import cli_init, cli_create, cli_tree
+    from trc_main import cli_init, cli_create, cli_tree
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -433,7 +433,7 @@ def test_cli_tree_shows_hierarchy(sample_project, tmp_trace_dir, monkeypatch, ca
 
 def test_cli_list_all_projects(sample_project, tmp_trace_dir, tmp_path, monkeypatch, capsys):
     """cli_list --all should show issues from all projects."""
-    from trace import cli_init, cli_create, cli_list
+    from trc_main import cli_init, cli_create, cli_list
 
     # Create second project
     proj2_path = tmp_path / "proj2"
@@ -464,7 +464,7 @@ def test_cli_list_all_projects(sample_project, tmp_trace_dir, tmp_path, monkeypa
 
 def test_cli_create_with_description_flag(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_create should accept --description flag."""
-    from trace import cli_init, cli_create, get_db, get_issue
+    from trc_main import cli_init, cli_create, get_db, get_issue
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -485,7 +485,7 @@ def test_cli_create_with_description_flag(sample_project, tmp_trace_dir, monkeyp
 
 def test_cli_create_with_priority_flag(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_create should accept --priority flag."""
-    from trace import cli_init, cli_create, get_db, get_issue
+    from trc_main import cli_init, cli_create, get_db, get_issue
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -506,7 +506,7 @@ def test_cli_create_with_priority_flag(sample_project, tmp_trace_dir, monkeypatc
 
 def test_cli_create_with_status_flag(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_create should accept --status flag."""
-    from trace import cli_init, cli_create, get_db, get_issue
+    from trc_main import cli_init, cli_create, get_db, get_issue
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -527,7 +527,7 @@ def test_cli_create_with_status_flag(sample_project, tmp_trace_dir, monkeypatch,
 
 def test_cli_create_with_depends_on_flag(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_create should accept --depends-on flag."""
-    from trace import cli_init, cli_create, get_db, get_dependencies
+    from trc_main import cli_init, cli_create, get_db, get_dependencies
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()
@@ -558,7 +558,7 @@ def test_cli_create_with_depends_on_flag(sample_project, tmp_trace_dir, monkeypa
 
 def test_cli_create_with_all_flags(sample_project, tmp_trace_dir, monkeypatch, capsys):
     """cli_create should accept all flags together."""
-    from trace import cli_init, cli_create, get_db, get_issue, get_dependencies
+    from trc_main import cli_init, cli_create, get_db, get_issue, get_dependencies
 
     monkeypatch.chdir(sample_project["path"])
     cli_init()

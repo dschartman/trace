@@ -8,7 +8,7 @@ import pytest
 
 def test_detect_project_from_git_repo(sample_project):
     """Should detect project from git repository."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     # Change to project directory
     original_cwd = os.getcwd()
@@ -25,7 +25,7 @@ def test_detect_project_from_git_repo(sample_project):
 
 def test_detect_project_from_subdirectory(sample_project):
     """Should walk up to find .git from subdirectory."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     # Create nested subdirectory
     subdir = Path(sample_project["path"]) / "src" / "components"
@@ -45,7 +45,7 @@ def test_detect_project_from_subdirectory(sample_project):
 
 def test_detect_project_extracts_name_from_git_remote(tmp_path):
     """Should extract project name from git remote URL."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     # Create project with different remote URL patterns
     project_path = tmp_path / "localname"
@@ -83,7 +83,7 @@ def test_detect_project_extracts_name_from_git_remote(tmp_path):
 
 def test_detect_project_uses_directory_name_when_no_remote(tmp_path):
     """Should use directory name when no git remote configured."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     project_path = tmp_path / "myproject"
     project_path.mkdir()
@@ -108,7 +108,7 @@ def test_detect_project_uses_directory_name_when_no_remote(tmp_path):
 
 def test_detect_project_returns_none_outside_git_repo(tmp_path):
     """Should return None when not in a git repository."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     # Create directory without .git
     no_git_dir = tmp_path / "nogit"
@@ -126,7 +126,7 @@ def test_detect_project_returns_none_outside_git_repo(tmp_path):
 
 def test_detect_project_uses_absolute_path(sample_project):
     """Project ID should be absolute path, not name."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     original_cwd = os.getcwd()
     try:
@@ -142,7 +142,7 @@ def test_detect_project_uses_absolute_path(sample_project):
 
 def test_detect_project_handles_symlinks(tmp_path):
     """Should resolve symlinks to real path."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     # Create real project
     real_project = tmp_path / "real"
@@ -167,7 +167,7 @@ def test_detect_project_handles_symlinks(tmp_path):
 
 def test_detect_project_sanitizes_project_name():
     """Project names should be sanitized for use in IDs."""
-    from trace import sanitize_project_name
+    from trc_main import sanitize_project_name
 
     assert sanitize_project_name("My Project") == "my-project"
     assert sanitize_project_name("my_project") == "my-project"
@@ -180,7 +180,7 @@ def test_detect_project_sanitizes_project_name():
 
 def test_detect_project_stops_at_filesystem_root(tmp_path):
     """Should stop searching at filesystem root, not infinite loop."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     # This test ensures we don't walk infinitely up the tree
     # In practice, we should stop at filesystem root or home directory
@@ -198,7 +198,7 @@ def test_detect_project_stops_at_filesystem_root(tmp_path):
 
 def test_detect_project_cwd_parameter(sample_project):
     """Should accept optional current working directory parameter."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     # Don't change directory, pass path as parameter
     project = detect_project(cwd=sample_project["path"])
@@ -210,7 +210,7 @@ def test_detect_project_cwd_parameter(sample_project):
 
 def test_detect_project_nested_git_repos(tmp_path):
     """Should detect nearest git repo, not parent repo."""
-    from trace import detect_project
+    from trc_main import detect_project
 
     # Create outer repo
     outer = tmp_path / "outer"

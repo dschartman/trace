@@ -173,7 +173,7 @@ See `docs/implementation-plan.md` for complete breakdown.
 2. **Path-based project IDs**: Absolute paths ensure uniqueness
 3. **Default project**: Discovery inbox at `~/.trace/default/` for pre-project work
 4. **Immediate JSONL export**: Prioritize safety over performance
-5. **Single-file implementation**: Target ~500 lines in `trace.py`
+5. **Single-file implementation**: Target ~500 lines in `trc_main.py`
 6. **No daemon (Phase 1)**: Subprocess is fast enough
 7. **No size field**: Removed - not useful for AI agents
 8. **No auto-close parents**: Parents require explicit close action
@@ -182,7 +182,7 @@ See `docs/implementation-plan.md` for complete breakdown.
 
 ## Default Behaviors
 
-- **`trace list`**: Shows flat list, ordered by priority/status/created_at (YAGNI approach)
+- **`trc list`**: Shows flat list, ordered by priority/status/created_at (YAGNI approach)
   - In project: show that project's issues
   - Outside project: show default project issues
   - Use `--all` for cross-project view
@@ -194,10 +194,10 @@ See `docs/implementation-plan.md` for complete breakdown.
 **Philosophy**: JSONL files are distributed source of truth. Central DB is aggregation.
 
 **Recovery Scenarios**:
-1. **Corrupted SQLite**: Rebuild from JSONL files (`trace sync --force-import`)
+1. **Corrupted SQLite**: Rebuild from JSONL files (`trc sync --force-import`)
 2. **Malformed JSONL**: Warn, skip bad lines, report errors, user fixes manually
 3. **Merge conflicts**: User resolves via git (treat like code)
-4. **Project moved**: Requires manual re-registration (`trace init` in new location)
+4. **Project moved**: Requires manual re-registration (`trc init` in new location)
 5. **Missing JSONL**: Export from DB if exists, create empty if not
 
 **No automation for**: Merge conflicts, data corruption, project migration
@@ -205,8 +205,8 @@ See `docs/implementation-plan.md` for complete breakdown.
 ## Reorganization Commands
 
 Critical differentiator - make these trivial:
-- `trace reparent <id> --parent <parent-id>` - Change parent (with cycle detection)
-- `trace move <id> --to-project <project>` - Move between projects (updates dependencies)
+- `trc reparent <id> --parent <parent-id>` - Change parent (with cycle detection)
+- `trc move <id> --to-project <project>` - Move between projects (updates dependencies)
 - Cross-project moves preserve all relationships
 
 ## Common Pitfalls
@@ -219,29 +219,29 @@ Critical differentiator - make these trivial:
 
 ## File Locations
 
-- Implementation: `trace.py` (single file, ~500 lines target)
+- Implementation: `trc_main.py` (single file, ~500 lines target)
 - Tests: `tests/` directory
 - Docs: `docs/` directory
   - `product-vision.md` - Core philosophy
   - `use-cases.md` - Real-world workflows
   - `key-features.md` - Technical details
   - `cli-design.md` - Command reference
-  - `implementation-plan.md` - Phase-by-phase test specs
+  - `quickstart.md` - Getting started guide
+  - `design-decisions.md` - Important rationale
 
 ## When Working on Features
 
-1. Check `docs/implementation-plan.md` for test specifications
-2. Write tests first (they should fail)
-3. Implement minimal code to pass tests
-4. Run coverage check
-5. Update docs if behavior changes
-6. Ensure JSONL export/import handles new fields
+1. Write tests first (they should fail)
+2. Implement minimal code to pass tests
+3. Run coverage check
+4. Update docs if behavior changes
+5. Ensure JSONL export/import handles new fields
 
 ## Cross-Project Dependencies
 
 Key capability - ensure:
 - Dependencies can link across project boundaries
-- `trace ready --all` shows work ordered by cross-project blocking
+- `trc ready --all` shows work ordered by cross-project blocking
 - Moving an issue updates all dependencies pointing to it
 - JSONL files store dependency IDs (may reference other projects)
 
@@ -262,6 +262,6 @@ Trace is designed for AI agents (especially Claude Code):
 - Commands have `--json` flag for machine-readable output
 - Error messages are structured and parseable
 - Bulk operations minimize round-trips
-- Context-rich output (e.g., `trace show` includes dependencies, children, completion %)
+- Context-rich output (e.g., `trc show` includes dependencies, children, completion %)
 
 Future: MCP server will expose trace as native Claude Code tool.

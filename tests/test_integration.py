@@ -27,7 +27,7 @@ def test_feature_planning_workflow(tmp_path, tmp_trace_dir, monkeypatch, capsys)
     5. Check ready work
     6. Verify JSONL created
     """
-    from trace import cli_init, cli_create, cli_tree, cli_ready, cli_list
+    from trc_main import cli_init, cli_create, cli_tree, cli_ready, cli_list
 
     # Setup project
     project = tmp_path / "myapp"
@@ -105,7 +105,7 @@ def test_cross_project_dependencies(tmp_path, tmp_trace_dir, monkeypatch, capsys
     4. Check ready work across projects
     5. Verify cross-project blocking
     """
-    from trace import cli_init, cli_create, cli_ready, get_db, add_dependency, is_blocked
+    from trc_main import cli_init, cli_create, cli_ready, get_db, add_dependency, is_blocked
 
     # Create lib project
     lib_project = tmp_path / "mylib"
@@ -170,7 +170,7 @@ def test_jsonl_roundtrip(tmp_path, tmp_trace_dir, monkeypatch):
     4. Import from JSONL
     5. Verify all issues restored
     """
-    from trace import cli_init, cli_create, get_db, get_issue, export_to_jsonl, import_from_jsonl
+    from trc_main import cli_init, cli_create, get_db, get_issue, export_to_jsonl, import_from_jsonl
 
     # Create project
     project = tmp_path / "myapp"
@@ -183,7 +183,7 @@ def test_jsonl_roundtrip(tmp_path, tmp_trace_dir, monkeypatch):
     # Create issues with dependencies
     db = get_db()
 
-    from trace import create_issue, add_dependency
+    from trc_main import create_issue, add_dependency
     parent = create_issue(db, str(project), "myapp", "Parent issue", priority=0)
     child = create_issue(
         db,
@@ -231,7 +231,7 @@ def test_jsonl_roundtrip(tmp_path, tmp_trace_dir, monkeypatch):
     assert child_restored["status"] == "in_progress"
 
     # Verify dependencies restored
-    from trace import get_dependencies
+    from trc_main import get_dependencies
     deps = get_dependencies(db, child_id)
     assert len(deps) == 1
     assert deps[0]["depends_on_id"] == parent_id
@@ -250,7 +250,7 @@ def test_git_pull_simulation(tmp_path, tmp_trace_dir, monkeypatch, capsys):
     4. Run any command
     5. Verify sync detected and imported changes
     """
-    from trace import cli_init, cli_create, cli_list, get_db, get_issue
+    from trc_main import cli_init, cli_create, cli_list, get_db, get_issue
     import json
     import time
 
