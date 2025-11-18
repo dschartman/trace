@@ -1063,3 +1063,156 @@ def test_cli_ready_defaults_to_open_status(sample_project, tmp_trace_dir, monkey
     assert "Open issue" in result.output
     # Should not show in_progress issues by default
     assert "In progress issue" not in result.output
+
+
+def test_cli_create_with_project_flag(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """cli_create --project should create issue in specified project."""
+    from trc_main import get_db, get_issue
+
+    runner = CliRunner()
+
+    # Create second project
+    proj2_path = tmp_path / "proj2"
+    proj2_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj2_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj2.git"],
+        cwd=proj2_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Init both projects
+    monkeypatch.chdir(sample_project["path"])
+    runner.invoke(app, ["init"])
+
+    monkeypatch.chdir(proj2_path)
+    runner.invoke(app, ["init"])
+
+    # Create issue in proj2 from proj1 directory using --project
+    monkeypatch.chdir(sample_project["path"])
+    result = runner.invoke(app, ["create", "Issue for proj2", "--description", "test", "--project", "proj2"])
+
+    assert result.exit_code == 0
+    assert "Created" in result.output
+    assert "proj2-" in result.output
+
+    issue_id = extract_issue_id(result.output)
+
+    # Verify issue was created in proj2
+    db = get_db()
+    issue = get_issue(db, issue_id)
+    assert issue is not None
+    assert issue["title"] == "Issue for proj2"
+    assert issue["project_id"] == str(proj2_path.resolve())
+    assert issue["id"].startswith("proj2-")
+    db.close()
+
+
+def test_cli_create_with_project_flag_not_found(sample_project, tmp_trace_dir, monkeypatch):
+    """cli_create --project should error when project not in registry."""
+    runner = CliRunner()
+
+    monkeypatch.chdir(sample_project["path"])
+    runner.invoke(app, ["init"])
+
+    # Try to create issue in non-existent project
+    result = runner.invoke(app, ["create", "Test issue", "--description", "test", "--project", "nonexistent"])
+
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
+    assert "trc init" in result.output.lower()
+
+
+def test_cli_create_with_project_flag_outside_git_repo(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """cli_create --project should work when not in a git repo."""
+    from trc_main import get_db, get_issue
+
+    runner = CliRunner()
+
+    # Init the project first
+    monkeypatch.chdir(sample_project["path"])
+    runner.invoke(app, ["init"])
+
+    # Switch to non-git directory
+    non_git_dir = tmp_path / "not-a-repo"
+    non_git_dir.mkdir()
+    monkeypatch.chdir(non_git_dir)
+
+    # Create issue using --project flag (should work even outside git repo)
+    result = runner.invoke(app, [
+        "create",
+        "Issue from nowhere",
+        "--description", "test",
+        "--project", sample_project["name"]
+    ])
+
+    assert result.exit_code == 0
+    assert "Created" in result.output
+
+    issue_id = extract_issue_id(result.output)
+
+    # Verify issue was created in correct project
+    db = get_db()
+    issue = get_issue(db, issue_id)
+    assert issue is not None
+    assert issue["title"] == "Issue from nowhere"
+    assert issue["project_id"] == sample_project["path"]
+    db.close()
+
+
+def test_cli_create_with_project_flag_and_parent(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """cli_create --project should work with --parent from different project."""
+    from trc_main import get_db, get_issue, get_dependencies
+
+    runner = CliRunner()
+
+    # Create second project
+    proj2_path = tmp_path / "proj2"
+    proj2_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj2_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj2.git"],
+        cwd=proj2_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Init both projects
+    monkeypatch.chdir(sample_project["path"])
+    runner.invoke(app, ["init"])
+
+    monkeypatch.chdir(proj2_path)
+    runner.invoke(app, ["init"])
+
+    # Create parent in proj1
+    monkeypatch.chdir(sample_project["path"])
+    result = runner.invoke(app, ["create", "Parent in proj1", "--description", ""])
+    parent_id = extract_issue_id(result.output)
+
+    # Create child in proj2 with parent from proj1
+    result = runner.invoke(app, [
+        "create",
+        "Child in proj2",
+        "--description", "test",
+        "--project", "proj2",
+        "--parent", parent_id
+    ])
+
+    assert result.exit_code == 0
+    assert "Created" in result.output
+    assert f"Parent: {parent_id}" in result.output
+
+    child_id = extract_issue_id(result.output)
+
+    # Verify cross-project parent link
+    db = get_db()
+    issue = get_issue(db, child_id)
+    assert issue is not None
+    assert issue["project_id"] == str(proj2_path.resolve())
+
+    deps = get_dependencies(db, child_id)
+    parent_deps = [d for d in deps if d["type"] == "parent"]
+    assert len(parent_deps) == 1
+    assert parent_deps[0]["depends_on_id"] == parent_id
+    db.close()

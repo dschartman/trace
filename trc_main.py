@@ -1216,14 +1216,35 @@ def create(
     status: Annotated[str, typer.Option(help="Initial status")] = "open",
     parent: Annotated[Optional[str], typer.Option(help="Parent issue ID")] = None,
     depends_on: Annotated[Optional[str], typer.Option(help="Blocking dependency ID")] = None,
+    project_flag: Annotated[Optional[str], typer.Option("--project", help="Target project name")] = None,
 ):
     """Create a new issue."""
-    project = detect_project()
+    # Resolve target project
+    if project_flag:
+        # Look up in registry
+        db = get_db()
+        cursor = db.execute(
+            "SELECT path, name FROM projects WHERE name = ?",
+            (project_flag,)
+        )
+        row = cursor.fetchone()
 
-    if project is None:
-        print("Error: Not in a git repository")
-        print("Run 'trc init' first")
-        raise typer.Exit(code=1)
+        if row is None:
+            print(f"Error: Project '{project_flag}' not found in registry")
+            print("Hint: Run 'trc init' in the target project first")
+            db.close()
+            raise typer.Exit(code=1)
+
+        project = {"path": row[0], "name": row[1]}
+        db.close()
+    else:
+        # Use current directory detection
+        project = detect_project()
+
+        if project is None:
+            print("Error: Not in a git repository")
+            print("Run 'trc init' first or use --project <name>")
+            raise typer.Exit(code=1)
 
     lock_path = get_lock_path()
 
@@ -1888,6 +1909,7 @@ immediate, single-session task tracking. Trace is for everything else.
 - `trc show <id>` - See full details including dependencies
 - `trc list` - List all issues in current project
 - `trc close <id>` - Mark work as complete
+- `trc update <id>` - Update existing issue (supports --title, --description, --priority, --status)
 - `trc add-dependency <id> <depends-on-id>` - Add blocking dependency to existing issue
 - `trc add-dependency <id> <parent-id> --type parent` - Add parent to existing issue
 - `trc add-dependency <id> <related-id> --type related` - Link related issues
@@ -1898,6 +1920,7 @@ when returning to them later. The description field preserves this context.
 Even brief descriptions ("see parent", "blocked on API") are valuable.
 
 **Cross-project:**
+- `trc create "title" --description "context" --project <name>` - Create issue in another project
 - `trc create "title" --description "context" --depends-on <other-project-id>` - Link dependencies at creation
 - `trc add-dependency <id> <other-project-id>` - Add cross-project dependency later
 - `trc ready --project any` - See ready work across all projects

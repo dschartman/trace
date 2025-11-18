@@ -108,8 +108,8 @@ EOF
 --priority <0-4>           Priority level (default: 2)
 --parent <id>              Parent issue ID
 --depends-on <id>          Blocking dependency ID
---project <name>           Override auto-detected project
---description <text>       Detailed description
+--project <name>           Target project name (create in different project)
+--description <text>       Detailed description (required)
 --status <status>          Initial status (default: open)
 
 # Output
