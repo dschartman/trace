@@ -4,11 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "trc"
-version = "0.1.0"
+version = "0.2.1"
 description = "Minimal distributed issue tracker for AI agent workflows"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "typer>=0.20.0",
+]
 
 [project.scripts]
 trc = "trc_main:main"
