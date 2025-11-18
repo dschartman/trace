@@ -327,9 +327,10 @@ trc move <id> <project>               # Move to different project
 
 ### Advanced
 ```bash
+trc create "title" --description "context" --project <name>   # Create in different project
 trc create "title" --description "context" --depends-on <id>  # Add blocker
-trc ready --all                                               # Cross-project ready work
-trc list --all                                                # All projects
+trc ready --project any                                       # Cross-project ready work
+trc list --project any                                        # All projects
 ```
 
 ## Output for CLAUDE.md

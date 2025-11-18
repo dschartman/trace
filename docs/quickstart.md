@@ -253,11 +253,15 @@ cd ~/repos/mylib
 trc create "Add WebSocket support" --description "Real-time event streaming API"
 # Output: Created mylib-x7y8z9
 
-# In app project
+# In app project (or use --project to create from anywhere)
 cd ~/repos/myapp
 trc create "Use WebSocket in UI" --description "Live updates for dashboard" --depends-on mylib-x7y8z9
 # Output: Created myapp-a1b2c3
 # Output:   Depends-on: mylib-x7y8z9
+
+# Alternative: Create in different project without cd
+trc create "Add caching layer" --description "Use Redis" --project mylib
+# Output: Created mylib-abc456
 
 # Check ready work (app issue will be blocked)
 trc ready
