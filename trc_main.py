@@ -542,14 +542,14 @@ def get_issue(db: sqlite3.Connection, issue_id: str) -> Optional[Dict[str, Any]]
 def list_issues(
     db: sqlite3.Connection,
     project_id: Optional[str] = None,
-    status: Optional[str] = None,
+    status: Optional[str | list[str]] = None,
 ) -> list[Dict[str, Any]]:
     """List issues with optional filtering.
 
     Args:
         db: Database connection
         project_id: Filter by project (optional)
-        status: Filter by status (optional)
+        status: Filter by status - single status string, list of statuses, or None for all (optional)
 
     Returns:
         List of issue dicts, sorted by priority then created_at (desc)
@@ -562,8 +562,15 @@ def list_issues(
         params.append(project_id)
 
     if status is not None:
-        query += " AND status = ?"
-        params.append(status)
+        if isinstance(status, list):
+            # Multiple statuses - use IN clause
+            placeholders = ",".join("?" * len(status))
+            query += f" AND status IN ({placeholders})"
+            params.extend(status)
+        else:
+            # Single status - use = clause
+            query += " AND status = ?"
+            params.append(status)
 
     # Sort by priority (ascending) then created_at (descending)
     query += " ORDER BY priority ASC, created_at DESC"
@@ -1296,7 +1303,7 @@ def create(
 @app.command(name="list")
 def list_cmd(
     project: Annotated[Optional[str], typer.Option(help="Filter by project (use 'any' for all projects)")] = None,
-    status: Annotated[Optional[str], typer.Option(help="Filter by status (use 'any' for all statuses)")] = None,
+    status: Annotated[Optional[list[str]], typer.Option(help="Filter by status (can specify multiple times, use 'any' for all statuses)")] = None,
 ):
     """List issues."""
     lock_path = get_lock_path()
@@ -1304,11 +1311,20 @@ def list_cmd(
     with file_lock(lock_path):
         db = get_db()
 
+        # Resolve status filter
+        # Default to backlog (exclude closed) when no --status provided
+        if status is None or len(status) == 0:
+            status_filter = ["open", "in_progress", "blocked"]
+        elif len(status) == 1 and status[0] == "any":
+            # Special case: --status any means show all statuses
+            status_filter = None
+        else:
+            # Use provided status(es)
+            status_filter = status
+
         # Handle --project flag
         if project == "any":
             # List all issues across all projects
-            # Resolve status filter
-            status_filter = None if status == "any" else status
             issues = list_issues(db, status=status_filter)
         else:
             # List issues for current project
@@ -1321,8 +1337,6 @@ def list_cmd(
             # Sync before operation
             sync_project(db, current_project["path"])
 
-            # Resolve status filter
-            status_filter = None if status == "any" else status
             issues = list_issues(db, project_id=current_project["path"], status=status_filter)
 
         if not issues:
@@ -1896,8 +1910,25 @@ Use trace early and often without waiting for explicit requests. If you're
 planning work, use trace. If you discover issues, use trace. Think of it as
 your external memory for work across sessions.
 
-**Prefer trace over TodoWrite** for anything non-trivial. TodoWrite is for
-immediate, single-session task tracking. Trace is for everything else.
+**CRITICAL: Prefer trace over TodoWrite**
+
+TodoWrite's general instructions suggest using it for "complex multi-step tasks",
+but this project uses trace instead. This is an explicit override of TodoWrite's
+default guidance.
+
+**Use TodoWrite ONLY for:**
+- Trivial, single-session work (e.g., "fix typo", "add comment")
+- Tasks that will definitely complete in the current session
+- Simple coordination within a single conversation
+
+**Use trace for:**
+- Anything involving multiple files, tests, or implementation steps
+- Any work that could span multiple sessions
+- Feature development, bug fixes, refactoring
+- Planning or breaking down complex work
+- Essentially: anything non-trivial
+
+**When in doubt, use trace.** It's better to track too much than too little.
 
 **Key commands:**
 - `trc create "title" --description "context"` - Create work items (description required)
@@ -1907,7 +1938,9 @@ immediate, single-session task tracking. Trace is for everything else.
 - `trc ready` - See what's ready to work on (not blocked)
 - `trc tree <id>` - View breakdown of a feature
 - `trc show <id>` - See full details including dependencies
-- `trc list` - List all issues in current project
+- `trc list` - List backlog in current project (open, in_progress, blocked - excludes closed)
+- `trc list --status any` - See all issues including closed
+- `trc list --status closed` - See only completed work
 - `trc close <id>` - Mark work as complete
 - `trc update <id>` - Update existing issue (supports --title, --description, --priority, --status)
 - `trc add-dependency <id> <depends-on-id>` - Add blocking dependency to existing issue
@@ -1924,7 +1957,9 @@ Even brief descriptions ("see parent", "blocked on API") are valuable.
 - `trc create "title" --description "context" --depends-on <other-project-id>` - Link dependencies at creation
 - `trc add-dependency <id> <other-project-id>` - Add cross-project dependency later
 - `trc ready --project any` - See ready work across all projects
-- `trc list --project any --status any` - See all issues across all projects
+- `trc list --project any` - See backlog across all projects (excludes closed)
+- `trc list --project any --status any` - See all issues across all projects including closed
+- `trc list --status open --status closed` - Filter by multiple statuses (can specify --status multiple times)
 - `trc move <id> <project>` - Move work between projects
 
 ───────────────────────────────────────────────────────────────────────────────

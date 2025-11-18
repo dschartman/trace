@@ -124,11 +124,14 @@ EOF
 
 List issues with filtering.
 
+**Default behavior**: Shows backlog (open, in_progress, blocked) - excludes closed issues.
+
 ```bash
-# Current project
+# Current project (shows backlog by default)
 $ trc list
 myapp-abc123 [P1] [open] Add authentication
 myapp-def456 [P0] [in_progress] Fix security bug
+myapp-ghi789 [P2] [blocked] Add OAuth (blocked)
 
 # All projects
 $ trc list --project any
@@ -136,9 +139,16 @@ $ trc list --project any
 # Filter by specific project
 $ trc list --project mylib
 
-# Filter by status
+# Show all statuses including closed
+$ trc list --status any
+
+# Filter by specific status
 $ trc list --status open
-$ trc list --status closed,in_progress
+$ trc list --status closed
+
+# Multiple status filters (specify --status multiple times)
+$ trc list --status open --status closed
+$ trc list --status in_progress --status blocked
 
 # Filter by priority
 $ trc list --priority 0
@@ -157,8 +167,10 @@ $ trc list --limit 10
 
 # Options
 --project any                Show all projects (or specify project name)
---status any                 Show all statuses (or specify specific status)
---status <status>[,...]      Filter by status (open, closed, in_progress, blocked)
+--status <status>            Filter by status (can specify multiple times)
+                             Values: open, closed, in_progress, blocked
+                             Default: open, in_progress, blocked (excludes closed)
+                             Use 'any' to show all statuses including closed
 --priority <N>[,...]         Filter by priority
 --parent <id>                Show children of parent
 --no-children                Exclude issues with parents (top-level only)

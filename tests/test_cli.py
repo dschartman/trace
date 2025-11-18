@@ -1026,6 +1026,56 @@ def test_cli_list_status_in_progress_filters_correctly(sample_project, tmp_trace
     assert "Open issue" not in result.output
 
 
+def test_cli_list_default_excludes_closed(sample_project, tmp_trace_dir, monkeypatch):
+    """cli_list without --status should show backlog (exclude closed)."""
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create issues with different statuses
+    runner.invoke(app, ["create", "Open issue", "--description", ""])
+    runner.invoke(app, ["create", "In progress issue", "--description", "", "--status", "in_progress"])
+    runner.invoke(app, ["create", "Blocked issue", "--description", "", "--status", "blocked"])
+    result = runner.invoke(app, ["create", "To be closed", "--description", ""])
+    closed_id = extract_issue_id(result.output)
+    runner.invoke(app, ["close", closed_id])
+
+    # List without --status flag (should show backlog: open, in_progress, blocked)
+    result = runner.invoke(app, ["list"])
+
+    assert result.exit_code == 0
+    assert "Open issue" in result.output
+    assert "In progress issue" in result.output
+    assert "Blocked issue" in result.output
+    assert "To be closed" not in result.output  # Closed should be excluded
+
+
+def test_cli_list_multiple_status_flags(sample_project, tmp_trace_dir, monkeypatch):
+    """cli_list with multiple --status flags should show all specified statuses."""
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create issues with different statuses
+    runner.invoke(app, ["create", "Open issue", "--description", ""])
+    runner.invoke(app, ["create", "In progress issue", "--description", "", "--status", "in_progress"])
+    runner.invoke(app, ["create", "Blocked issue", "--description", "", "--status", "blocked"])
+    result = runner.invoke(app, ["create", "To be closed", "--description", ""])
+    closed_id = extract_issue_id(result.output)
+    runner.invoke(app, ["close", closed_id])
+
+    # List with multiple --status flags (open and closed)
+    result = runner.invoke(app, ["list", "--status", "open", "--status", "closed"])
+
+    assert result.exit_code == 0
+    assert "Open issue" in result.output
+    assert "To be closed" in result.output
+    assert "In progress issue" not in result.output  # Should not show in_progress
+    assert "Blocked issue" not in result.output  # Should not show blocked
+
+
 def test_cli_ready_status_any_shows_all_statuses(sample_project, tmp_trace_dir, monkeypatch):
     """cli_ready --status any should show ready issues with all statuses."""
     runner = CliRunner()

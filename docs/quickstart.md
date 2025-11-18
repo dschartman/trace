@@ -118,6 +118,8 @@ Close the issue when done:
 trc close myproject-b8n4x3
 ```
 
+**Note**: By default, `trc list` shows your backlog (open, in_progress, blocked) and excludes closed issues. To view completed work, use `trc list --status closed` or `trc list --status any` to see everything.
+
 ## Core Commands
 
 ### Creating Issues
@@ -152,11 +154,20 @@ trc create "Complex task" \
 ### Viewing Work
 
 ```bash
-# List issues in current project
+# List backlog in current project (excludes closed by default)
 trc list
 
+# List all statuses including closed
+trc list --status any
+
+# List only closed issues
+trc list --status closed
+
+# List specific statuses (can specify multiple)
+trc list --status open --status in_progress
+
 # List all issues across projects
-trc list --all
+trc list --project any
 
 # Show issue details
 trc show myproject-abc123
@@ -168,7 +179,7 @@ trc tree myproject-abc123
 trc ready
 
 # See ready work across all projects
-trc ready --all
+trc ready --project any
 ```
 
 ### Updating Issues
