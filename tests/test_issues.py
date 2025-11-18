@@ -304,6 +304,27 @@ def test_list_issues_returns_empty_for_no_matches(db_connection):
     assert issues == []
 
 
+def test_list_issues_filters_by_multiple_statuses(db_connection):
+    """Should filter issues by multiple statuses when given a list."""
+    from trc_main import create_issue, list_issues
+
+    # Create issues with different statuses
+    open_issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Open", status="open")
+    progress_issue = create_issue(db_connection, "/path/to/myapp", "myapp", "In Progress", status="in_progress")
+    blocked_issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocked", status="blocked")
+    closed_issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Closed", status="closed")
+
+    # Filter by multiple statuses
+    backlog_issues = list_issues(db_connection, project_id="/path/to/myapp", status=["open", "in_progress", "blocked"])
+
+    assert len(backlog_issues) == 3
+    issue_ids = [i["id"] for i in backlog_issues]
+    assert open_issue["id"] in issue_ids
+    assert progress_issue["id"] in issue_ids
+    assert blocked_issue["id"] in issue_ids
+    assert closed_issue["id"] not in issue_ids
+
+
 def test_create_issue_handles_empty_description(db_connection):
     """Should accept empty description."""
     from trc_main import create_issue

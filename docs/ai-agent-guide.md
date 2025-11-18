@@ -312,7 +312,9 @@ trc create "title" --description "context"           # Create issue (description
 trc create "title" --description "context" --parent <id>  # Create child issue
 trc create "title" --description ""                  # Opt-out of description (rare)
 trc ready                                            # Show ready work
-trc list                                             # List all issues
+trc list                                             # List backlog (excludes closed)
+trc list --status any                                # List all issues including closed
+trc list --status closed                             # List only completed work
 trc show <id>                                        # Show details
 trc close <id>                                       # Mark complete
 trc tree <id>                                        # View hierarchy
@@ -330,7 +332,9 @@ trc move <id> <project>               # Move to different project
 trc create "title" --description "context" --project <name>   # Create in different project
 trc create "title" --description "context" --depends-on <id>  # Add blocker
 trc ready --project any                                       # Cross-project ready work
-trc list --project any                                        # All projects
+trc list --project any                                        # All projects backlog
+trc list --project any --status any                           # All projects all statuses
+trc list --status open --status closed                        # Multiple status filters
 ```
 
 ## Output for CLAUDE.md

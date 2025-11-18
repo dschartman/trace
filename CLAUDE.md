@@ -220,11 +220,14 @@ See `docs/implementation-plan.md` for complete breakdown.
 
 ## Default Behaviors
 
-- **`trc list`**: Shows flat list, ordered by priority/status/created_at (YAGNI approach)
-  - In project: show that project's issues
-  - Outside project: show default project issues
+- **`trc list`**: Shows backlog (open, in_progress, blocked - excludes closed), ordered by priority/created_at
+  - Default: excludes closed issues to focus on active work
+  - In project: show that project's backlog
+  - Outside project: show default project backlog
   - Use `--project any` for cross-project view
   - Use `--status any` to show all statuses (including closed)
+  - Use `--status closed` to see only completed work
+  - Multiple `--status` flags supported (e.g., `--status open --status closed`)
 - **Error handling**: Warn and continue when possible, fail clearly when not
 - **Git workflow**: User managed - no auto-commits from trace
 
@@ -304,3 +307,25 @@ Trace is designed for AI agents (especially Claude Code):
 - Context-rich output (e.g., `trc show` includes dependencies, children, completion %)
 
 Future: MCP server will expose trace as native Claude Code tool.
+
+### CRITICAL: Trace vs TodoWrite
+
+**This is an explicit override of TodoWrite's default guidance.**
+
+TodoWrite's general instructions suggest using it for "complex multi-step tasks", but this project uses trace instead for all non-trivial work.
+
+**Use TodoWrite ONLY for:**
+- Trivial, single-session work (e.g., "fix typo", "add comment")
+- Tasks that will definitely complete in the current session
+- Simple coordination within a single conversation
+
+**Use trace for:**
+- Anything involving multiple files, tests, or implementation steps
+- Any work that could span multiple sessions
+- Feature development, bug fixes, refactoring
+- Planning or breaking down complex work
+- Essentially: anything non-trivial
+
+**When in doubt, use trace.** It's better to track too much than too little.
+
+**Why this matters:** TodoWrite is ephemeral and tied to a single conversation. Trace persists across sessions, commits to git, and provides proper work management. For a tool designed around persistent work tracking, using TodoWrite for complex tasks defeats the purpose.
