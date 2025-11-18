@@ -6,12 +6,17 @@ import json
 import os
 import re
 import sqlite3
-import sys
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Set, Dict
+
+import typer
+from typing_extensions import Annotated
+
+# Create Typer app
+app = typer.Typer(help="Trace - Minimal distributed issue tracker for AI agent workflows")
 
 
 class IDCollisionError(Exception):
@@ -1145,7 +1150,15 @@ def import_from_jsonl(
 
 
 def get_trace_home() -> Path:
-    """Get the trace home directory (~/.trace)."""
+    """Get the trace home directory (~/.trace).
+
+    Can be overridden via TRACE_HOME environment variable.
+    This is primarily used for test isolation to prevent tests
+    from modifying real user data.
+    """
+    trace_home = os.environ.get("TRACE_HOME")
+    if trace_home:
+        return Path(trace_home)
     return Path.home() / ".trace"
 
 
@@ -1162,14 +1175,15 @@ def get_db() -> sqlite3.Connection:
     return init_database(str(db_path))
 
 
-def cli_init():
+@app.command()
+def init():
     """Initialize trace in current directory."""
     project = detect_project()
 
     if project is None:
         print("Error: Not in a git repository")
         print("Run 'git init' first or use 'trc init' inside a git repo")
-        return 1
+        raise typer.Exit(code=1)
 
     # Create .trace directory
     trace_dir = Path(project["path"]) / ".trace"
@@ -1193,18 +1207,23 @@ def cli_init():
     print(f"Path: {project['path']}")
     print(f"JSONL: {jsonl_path}")
 
-    return 0
 
-
-def cli_create(title: str, description: str = "", priority: int = 2, status: str = "open",
-               parent: Optional[str] = None, depends_on: Optional[str] = None):
+@app.command()
+def create(
+    title: Annotated[str, typer.Argument(help="Issue title")],
+    description: Annotated[str, typer.Option(help="Detailed description (required)")],
+    priority: Annotated[int, typer.Option(help="Priority level (0-4)")] = 2,
+    status: Annotated[str, typer.Option(help="Initial status")] = "open",
+    parent: Annotated[Optional[str], typer.Option(help="Parent issue ID")] = None,
+    depends_on: Annotated[Optional[str], typer.Option(help="Blocking dependency ID")] = None,
+):
     """Create a new issue."""
     project = detect_project()
 
     if project is None:
         print("Error: Not in a git repository")
         print("Run 'trc init' first")
-        return 1
+        raise typer.Exit(code=1)
 
     lock_path = get_lock_path()
 
@@ -1228,7 +1247,7 @@ def cli_create(title: str, description: str = "", priority: int = 2, status: str
         if not issue:
             print("Error: Failed to create issue")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Add parent dependency if specified
         if parent:
@@ -1252,36 +1271,43 @@ def cli_create(title: str, description: str = "", priority: int = 2, status: str
 
         db.close()
 
-    return 0
 
-
-def cli_list(all_projects: bool = False, status: Optional[str] = None):
+@app.command(name="list")
+def list_cmd(
+    project: Annotated[Optional[str], typer.Option(help="Filter by project (use 'any' for all projects)")] = None,
+    status: Annotated[Optional[str], typer.Option(help="Filter by status (use 'any' for all statuses)")] = None,
+):
     """List issues."""
     lock_path = get_lock_path()
 
     with file_lock(lock_path):
         db = get_db()
 
-        if all_projects:
+        # Handle --project flag
+        if project == "any":
             # List all issues across all projects
-            issues = list_issues(db, status=status)
+            # Resolve status filter
+            status_filter = None if status == "any" else status
+            issues = list_issues(db, status=status_filter)
         else:
             # List issues for current project
-            project = detect_project()
-            if project is None:
-                print("Error: Not in a git repository. Use --all to list all issues.")
+            current_project = detect_project()
+            if current_project is None:
+                print("Error: Not in a git repository. Use --project any to list all issues.")
                 db.close()
-                return 1
+                raise typer.Exit(code=1)
 
             # Sync before operation
-            sync_project(db, project["path"])
+            sync_project(db, current_project["path"])
 
-            issues = list_issues(db, project_id=project["path"], status=status)
+            # Resolve status filter
+            status_filter = None if status == "any" else status
+            issues = list_issues(db, project_id=current_project["path"], status=status_filter)
 
         if not issues:
             print("No issues found")
             db.close()
-            return 0
+            return
 
         # Print issues
         for issue in issues:
@@ -1298,10 +1324,9 @@ def cli_list(all_projects: bool = False, status: Optional[str] = None):
 
         db.close()
 
-    return 0
 
-
-def cli_show(issue_id: str):
+@app.command()
+def show(issue_id: Annotated[str, typer.Argument(help="Issue ID")]):
     """Show issue details."""
     lock_path = get_lock_path()
 
@@ -1312,7 +1337,7 @@ def cli_show(issue_id: str):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Sync before operation
         sync_project(db, issue["project_id"])
@@ -1322,7 +1347,7 @@ def cli_show(issue_id: str):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Get dependencies
         deps = get_dependencies(db, issue_id)
@@ -1360,10 +1385,9 @@ def cli_show(issue_id: str):
 
         db.close()
 
-    return 0
 
-
-def cli_close(issue_id: str):
+@app.command()
+def close(issue_id: Annotated[str, typer.Argument(help="Issue ID")]):
     """Close an issue."""
     lock_path = get_lock_path()
 
@@ -1374,7 +1398,7 @@ def cli_close(issue_id: str):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Sync before operation
         sync_project(db, issue["project_id"])
@@ -1384,7 +1408,7 @@ def cli_close(issue_id: str):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Check for open children
         if has_open_children(db, issue_id):
@@ -1394,7 +1418,7 @@ def cli_close(issue_id: str):
             for child in open_children:
                 print(f"  - {child['id']}: {child['title']} [{child['status']}]")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Close the issue
         close_issue(db, issue_id)
@@ -1410,35 +1434,45 @@ def cli_close(issue_id: str):
 
         db.close()
 
-    return 0
 
-
-def cli_ready(all_projects: bool = False):
+@app.command()
+def ready(
+    project: Annotated[Optional[str], typer.Option(help="Filter by project (use 'any' for all projects)")] = None,
+    status: Annotated[Optional[str], typer.Option(help="Filter by status (defaults to 'open', use 'any' for all)")] = None,
+):
     """Show ready work (not blocked)."""
     lock_path = get_lock_path()
 
     with file_lock(lock_path):
         db = get_db()
 
-        if all_projects:
-            # Get all open issues
-            issues = list_issues(db, status="open")
+        # Default status to "open" if not specified
+        if status is None:
+            status = "open"
+
+        # Resolve status filter
+        status_filter = None if status == "any" else status
+
+        # Handle --project flag
+        if project == "any":
+            # Get all issues across all projects
+            issues = list_issues(db, status=status_filter)
         else:
-            project = detect_project()
-            if project is None:
-                print("Error: Not in a git repository. Use --all to see all ready work.")
+            current_project = detect_project()
+            if current_project is None:
+                print("Error: Not in a git repository. Use --project any to see all ready work.")
                 db.close()
-                return 1
+                raise typer.Exit(code=1)
 
             # Sync before operation
-            sync_project(db, project["path"])
+            sync_project(db, current_project["path"])
 
-            issues = list_issues(db, project_id=project["path"], status="open")
+            issues = list_issues(db, project_id=current_project["path"], status=status_filter)
 
         if not issues:
             print("No open issues found")
             db.close()
-            return 0
+            return
 
         # Filter to only ready (not blocked) issues
         ready_issues = []
@@ -1449,7 +1483,7 @@ def cli_ready(all_projects: bool = False):
         if not ready_issues:
             print("No ready work (all issues are blocked)")
             db.close()
-            return 0
+            return
 
         # Print ready issues
         print("Ready work (not blocked):\n")
@@ -1468,10 +1502,12 @@ def cli_ready(all_projects: bool = False):
 
         db.close()
 
-    return 0
 
-
-def cli_tree(issue_id: str, max_depth: int = 10):
+@app.command()
+def tree(
+    issue_id: Annotated[str, typer.Argument(help="Issue ID")],
+    max_depth: Annotated[int, typer.Option(help="Maximum depth to display")] = 10,
+):
     """Show issue tree (parent-child hierarchy)."""
     lock_path = get_lock_path()
 
@@ -1482,7 +1518,7 @@ def cli_tree(issue_id: str, max_depth: int = 10):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Sync before operation
         sync_project(db, issue["project_id"])
@@ -1492,7 +1528,7 @@ def cli_tree(issue_id: str, max_depth: int = 10):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         def print_tree(issue_id, depth=0, prefix="", is_last=True):
             """Recursively print issue tree."""
@@ -1536,11 +1572,15 @@ def cli_tree(issue_id: str, max_depth: int = 10):
 
         db.close()
 
-    return 0
 
-
-def cli_update(issue_id: str, title: Optional[str] = None, description: Optional[str] = None,
-               priority: Optional[int] = None, status: Optional[str] = None):
+@app.command()
+def update(
+    issue_id: Annotated[str, typer.Argument(help="Issue ID")],
+    title: Annotated[Optional[str], typer.Option(help="Set title")] = None,
+    description: Annotated[Optional[str], typer.Option(help="Set description")] = None,
+    priority: Annotated[Optional[int], typer.Option(help="Set priority (0-4)")] = None,
+    status: Annotated[Optional[str], typer.Option(help="Set status")] = None,
+):
     """Update an issue."""
     lock_path = get_lock_path()
 
@@ -1551,7 +1591,7 @@ def cli_update(issue_id: str, title: Optional[str] = None, description: Optional
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Sync before operation
         sync_project(db, issue["project_id"])
@@ -1561,7 +1601,7 @@ def cli_update(issue_id: str, title: Optional[str] = None, description: Optional
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Update issue
         try:
@@ -1569,7 +1609,7 @@ def cli_update(issue_id: str, title: Optional[str] = None, description: Optional
         except ValueError as e:
             print(f"Error: {e}")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Export to JSONL
         project_path = issue["project_id"]
@@ -1583,6 +1623,8 @@ def cli_update(issue_id: str, title: Optional[str] = None, description: Optional
             print(f"Updated {issue_id}:")
             if title:
                 print(f"  Title: {updated['title']}")
+            if description is not None:
+                print(f"  Description: {updated['description']}")
             if priority is not None:
                 print(f"  Priority: {updated['priority']}")
             if status:
@@ -1590,11 +1632,16 @@ def cli_update(issue_id: str, title: Optional[str] = None, description: Optional
 
         db.close()
 
-    return 0
 
-
-def cli_reparent(issue_id: str, new_parent_id: Optional[str]):
+@app.command()
+def reparent(
+    issue_id: Annotated[str, typer.Argument(help="Issue ID")],
+    new_parent_id: Annotated[str, typer.Argument(help="New parent ID (use 'none' to remove)")],
+):
     """Change parent of an issue."""
+    # Handle 'none' as None
+    parent_id = None if new_parent_id.lower() == "none" else new_parent_id
+
     lock_path = get_lock_path()
 
     with file_lock(lock_path):
@@ -1604,7 +1651,7 @@ def cli_reparent(issue_id: str, new_parent_id: Optional[str]):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Sync before operation
         sync_project(db, issue["project_id"])
@@ -1614,23 +1661,23 @@ def cli_reparent(issue_id: str, new_parent_id: Optional[str]):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Validate new parent exists if provided
-        if new_parent_id is not None:
-            new_parent = get_issue(db, new_parent_id)
+        if parent_id is not None:
+            new_parent = get_issue(db, parent_id)
             if new_parent is None:
-                print(f"Error: Parent issue {new_parent_id} not found")
+                print(f"Error: Parent issue {parent_id} not found")
                 db.close()
-                return 1
+                raise typer.Exit(code=1)
 
         # Reparent with cycle detection
         try:
-            reparent_issue(db, issue_id, new_parent_id)
+            reparent_issue(db, issue_id, parent_id)
         except ValueError as e:
             print(f"Error: {e}")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Export to JSONL for the issue's project
         project_path = issue["project_id"]
@@ -1640,17 +1687,86 @@ def cli_reparent(issue_id: str, new_parent_id: Optional[str]):
         set_last_sync_time(db, project_path, time.time())
 
         # Print confirmation
-        if new_parent_id is None:
+        if parent_id is None:
             print(f"Removed parent from {issue_id}")
         else:
-            print(f"Reparented {issue_id} to {new_parent_id}")
+            print(f"Reparented {issue_id} to {parent_id}")
 
         db.close()
 
-    return 0
+
+@app.command(name="add-dependency")
+def add_dependency_cmd(
+    issue_id: Annotated[str, typer.Argument(help="Issue ID")],
+    depends_on_id: Annotated[str, typer.Argument(help="Issue that is depended upon")],
+    dep_type: Annotated[str, typer.Option("--type", help="Dependency type (blocks, parent, related)")] = "blocks",
+):
+    """Add a dependency between two existing issues."""
+    lock_path = get_lock_path()
+
+    with file_lock(lock_path):
+        db = get_db()
+
+        # Validate both issues exist
+        issue = get_issue(db, issue_id)
+        if issue is None:
+            print(f"Error: Issue {issue_id} not found")
+            db.close()
+            raise typer.Exit(code=1)
+
+        depends_on = get_issue(db, depends_on_id)
+        if depends_on is None:
+            print(f"Error: Issue {depends_on_id} not found")
+            db.close()
+            raise typer.Exit(code=1)
+
+        # Sync both projects before operation
+        sync_project(db, issue["project_id"])
+        if depends_on["project_id"] != issue["project_id"]:
+            sync_project(db, depends_on["project_id"])
+
+        # Re-fetch after sync
+        issue = get_issue(db, issue_id)
+        depends_on = get_issue(db, depends_on_id)
+
+        if issue is None or depends_on is None:
+            print("Error: Issue not found after sync")
+            db.close()
+            raise typer.Exit(code=1)
+
+        # Add dependency
+        try:
+            add_dependency(db, issue_id, depends_on_id, dep_type)
+        except ValueError as e:
+            print(f"Error: {e}")
+            db.close()
+            raise typer.Exit(code=1)
+
+        # Export to JSONL for the issue's project
+        project_path = issue["project_id"]
+        trace_dir = Path(project_path) / ".trace"
+        jsonl_path = trace_dir / "issues.jsonl"
+        export_to_jsonl(db, project_path, str(jsonl_path))
+        set_last_sync_time(db, project_path, time.time())
+
+        # Also export for depends_on project if different
+        if depends_on["project_id"] != issue["project_id"]:
+            depends_project_path = depends_on["project_id"]
+            depends_trace_dir = Path(depends_project_path) / ".trace"
+            depends_jsonl_path = depends_trace_dir / "issues.jsonl"
+            export_to_jsonl(db, depends_project_path, str(depends_jsonl_path))
+            set_last_sync_time(db, depends_project_path, time.time())
+
+        print(f"Added {dep_type} dependency: {issue_id} → {depends_on_id}")
+
+        db.close()
 
 
-def cli_move(issue_id: str, target_project_name: str):
+@app.command()
+def move(
+    issue_id: Annotated[str, typer.Argument(help="Issue ID")],
+    target_project_name: Annotated[str, typer.Argument(help="Target project name")],
+):
     """Move issue to different project."""
     lock_path = get_lock_path()
 
@@ -1661,7 +1777,7 @@ def cli_move(issue_id: str, target_project_name: str):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Sync source project before operation
         sync_project(db, issue["project_id"])
@@ -1671,7 +1787,7 @@ def cli_move(issue_id: str, target_project_name: str):
         if issue is None:
             print(f"Error: Issue {issue_id} not found")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Get source project path
         old_project_path = issue["project_id"]
@@ -1687,7 +1803,7 @@ def cli_move(issue_id: str, target_project_name: str):
             print(f"Error: Project '{target_project_name}' not found in registry")
             print("Hint: Run 'trc init' in the target project first")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         new_project_id = row[0]
         new_project_name = row[1]
@@ -1701,7 +1817,7 @@ def cli_move(issue_id: str, target_project_name: str):
         except ValueError as e:
             print(f"Error: {e}")
             db.close()
-            return 1
+            raise typer.Exit(code=1)
 
         # Export to JSONL for both projects
         old_trace_dir = Path(old_project_path) / ".trace"
@@ -1721,10 +1837,9 @@ def cli_move(issue_id: str, target_project_name: str):
 
         db.close()
 
-    return 0
 
-
-def cli_guide() -> int:
+@app.command()
+def guide():
     """Display AI agent integration guide."""
     guide_text = """
 ═══════════════════════════════════════════════════════════════════════════════
@@ -1764,16 +1879,29 @@ your external memory for work across sessions.
 immediate, single-session task tracking. Trace is for everything else.
 
 **Key commands:**
-- `trc create "title" --parent <id>` - Create work items
+- `trc create "title" --description "context"` - Create work items (description required)
+  - Use `--description ""` to explicitly opt-out if no context needed
+  - Description preserves context across sessions for AI agents
+- `trc create "title" --description "context" --parent <id>` - Create with parent
 - `trc ready` - See what's ready to work on (not blocked)
 - `trc tree <id>` - View breakdown of a feature
 - `trc show <id>` - See full details including dependencies
 - `trc list` - List all issues in current project
 - `trc close <id>` - Mark work as complete
+- `trc add-dependency <id> <depends-on-id>` - Add blocking dependency to existing issue
+- `trc add-dependency <id> <parent-id> --type parent` - Add parent to existing issue
+- `trc add-dependency <id> <related-id> --type related` - Link related issues
+
+**Why --description is mandatory:**
+AI agents work across multiple sessions and need context to understand work items
+when returning to them later. The description field preserves this context.
+Even brief descriptions ("see parent", "blocked on API") are valuable.
 
 **Cross-project:**
-- `trc create "title" --depends-on <other-project-id>` - Link dependencies
-- `trc ready --all` - See ready work across all projects
+- `trc create "title" --description "context" --depends-on <other-project-id>` - Link dependencies at creation
+- `trc add-dependency <id> <other-project-id>` - Add cross-project dependency later
+- `trc ready --project any` - See ready work across all projects
+- `trc list --project any --status any` - See all issues across all projects
 - `trc move <id> <project>` - Move work between projects
 
 ───────────────────────────────────────────────────────────────────────────────
@@ -1782,182 +1910,12 @@ For more details on Trace philosophy and workflows:
   https://github.com/dschartman/trace
 """
     print(guide_text)
-    return 0
 
 
-def main() -> int:
+def main():
     """Main CLI entry point."""
-    if len(sys.argv) < 2:
-        print("trc - Minimal distributed issue tracker")
-        print("\nUsage:")
-        print("  trc init                        Initialize project")
-        print("  trc create <title> [options]    Create issue")
-        print("    --description <text>              Detailed description")
-        print("    --priority <0-4>                  Priority level (default: 2)")
-        print("    --parent <id>                     Parent issue ID")
-        print("    --depends-on <id>                 Blocking dependency ID")
-        print("    --status <status>                 Initial status (default: open)")
-        print("  trc list [--all]                List issues")
-        print("  trc show <id>                   Show issue details")
-        print("  trc close <id>                  Close issue")
-        print("  trc ready [--all]               Show ready work (not blocked)")
-        print("  trc tree <id>                   Show issue tree")
-        print("  trc update <id> [options]       Update issue")
-        print("    --title <title>                   Set title")
-        print("    --priority <0-4>                  Set priority")
-        print("    --status <status>                 Set status")
-        print("  trc reparent <id> <parent>      Change parent (use 'none' to remove)")
-        print("  trc move <id> <project>         Move issue to different project")
-        print("  trc guide                       Show AI agent integration guide")
-        return 0
-
-    command = sys.argv[1]
-
-    if command == "guide":
-        return cli_guide()
-    elif command == "init":
-        return cli_init()
-    elif command == "create":
-        if len(sys.argv) < 3:
-            print("Error: Title required")
-            print("Usage: trc create <title> [options]")
-            return 1
-
-        # Parse title (everything before first flag)
-        title_parts = []
-        i = 2
-        while i < len(sys.argv) and not sys.argv[i].startswith("--"):
-            title_parts.append(sys.argv[i])
-            i += 1
-
-        if not title_parts:
-            print("Error: Title required")
-            return 1
-
-        title = " ".join(title_parts)
-
-        # Parse flags
-        description = ""
-        priority = 2
-        status = "open"
-        parent = None
-        depends_on = None
-
-        while i < len(sys.argv):
-            if sys.argv[i] == "--description" and i + 1 < len(sys.argv):
-                description = sys.argv[i + 1]
-                i += 2
-            elif sys.argv[i] == "--priority" and i + 1 < len(sys.argv):
-                try:
-                    priority = int(sys.argv[i + 1])
-                except ValueError:
-                    print("Error: Priority must be a number 0-4")
-                    return 1
-                i += 2
-            elif sys.argv[i] == "--status" and i + 1 < len(sys.argv):
-                status = sys.argv[i + 1]
-                i += 2
-            elif sys.argv[i] == "--parent" and i + 1 < len(sys.argv):
-                parent = sys.argv[i + 1]
-                i += 2
-            elif sys.argv[i] == "--depends-on" and i + 1 < len(sys.argv):
-                depends_on = sys.argv[i + 1]
-                i += 2
-            else:
-                print(f"Unknown option: {sys.argv[i]}")
-                return 1
-
-        # Pass to cli_create
-        return cli_create(title, description=description, priority=priority,
-                          status=status, parent=parent, depends_on=depends_on)
-    elif command == "list":
-        all_flag = "--all" in sys.argv
-        return cli_list(all_projects=all_flag)
-    elif command == "show":
-        if len(sys.argv) < 3:
-            print("Error: Issue ID required")
-            print("Usage: trc show <id>")
-            return 1
-        return cli_show(sys.argv[2])
-    elif command == "close":
-        if len(sys.argv) < 3:
-            print("Error: Issue ID required")
-            print("Usage: trc close <id>")
-            return 1
-        return cli_close(sys.argv[2])
-    elif command == "ready":
-        all_flag = "--all" in sys.argv
-        return cli_ready(all_projects=all_flag)
-    elif command == "tree":
-        if len(sys.argv) < 3:
-            print("Error: Issue ID required")
-            print("Usage: trc tree <id>")
-            return 1
-        return cli_tree(sys.argv[2])
-    elif command == "update":
-        if len(sys.argv) < 3:
-            print("Error: Issue ID required")
-            print("Usage: trc update <id> [--title <title>] [--priority <0-4>] [--status <status>]")
-            return 1
-
-        issue_id = sys.argv[2]
-        title = None
-        priority = None
-        status = None
-
-        # Parse options
-        i = 3
-        while i < len(sys.argv):
-            if sys.argv[i] == "--title" and i + 1 < len(sys.argv):
-                title = sys.argv[i + 1]
-                i += 2
-            elif sys.argv[i] == "--priority" and i + 1 < len(sys.argv):
-                try:
-                    priority = int(sys.argv[i + 1])
-                except ValueError:
-                    print("Error: Priority must be a number 0-4")
-                    return 1
-                i += 2
-            elif sys.argv[i] == "--status" and i + 1 < len(sys.argv):
-                status = sys.argv[i + 1]
-                i += 2
-            else:
-                print(f"Unknown option: {sys.argv[i]}")
-                return 1
-
-        return cli_update(issue_id, title=title, priority=priority, status=status)
-    elif command == "reparent":
-        if len(sys.argv) < 4:
-            print("Error: Issue ID and parent ID required")
-            print("Usage: trc reparent <id> <parent-id>")
-            print("       tr reparent <id> none    (to remove parent)")
-            return 1
-
-        issue_id = sys.argv[2]
-        parent_arg = sys.argv[3]
-
-        # Handle 'none' as None
-        if parent_arg.lower() == "none":
-            new_parent_id = None
-        else:
-            new_parent_id = parent_arg
-
-        return cli_reparent(issue_id, new_parent_id)
-    elif command == "move":
-        if len(sys.argv) < 4:
-            print("Error: Issue ID and target project required")
-            print("Usage: trc move <id> <project-name>")
-            return 1
-
-        issue_id = sys.argv[2]
-        target_project = sys.argv[3]
-
-        return cli_move(issue_id, target_project)
-    else:
-        print(f"Unknown command: {command}")
-        print("Run 'trc' for usage information")
-        return 1
+    app()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

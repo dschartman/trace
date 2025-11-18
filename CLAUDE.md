@@ -62,6 +62,42 @@ uv run ty check .
 uv run ruff format .
 ```
 
+### Global Tool Installation
+
+**CRITICAL**: `uv tool install` creates a **copy** of the code, not a symlink.
+
+```bash
+# Install/update globally (makes `trc` command available)
+uv tool install --force .
+
+# Testing during development
+uv run python trc_main.py <command>  # Uses source directly
+trc <command>                         # Uses installed copy
+```
+
+**When making changes to the codebase:**
+
+1. **ALWAYS bump the version in `pyproject.toml`** first
+   - `uv` caches builds by version number
+   - Without a version bump, `uv` will use the cached old version
+   - Example: `0.1.0` → `0.1.1`
+
+2. **Reinstall globally** to test changes:
+   ```bash
+   uv tool uninstall trc
+   uv tool install .
+   ```
+
+3. **Verify the new version** is installed:
+   ```bash
+   uv tool list  # Should show new version number
+   ```
+
+**Why this matters:**
+- During development, use `uv run python trc_main.py` to test changes immediately
+- Before releasing or testing the actual `trc` command, bump version and reinstall
+- This ensures the global `trc` command has your latest changes
+
 ## Architecture
 
 ### Hybrid Storage Model
@@ -187,7 +223,8 @@ See `docs/implementation-plan.md` for complete breakdown.
 - **`trc list`**: Shows flat list, ordered by priority/status/created_at (YAGNI approach)
   - In project: show that project's issues
   - Outside project: show default project issues
-  - Use `--all` for cross-project view
+  - Use `--project any` for cross-project view
+  - Use `--status any` to show all statuses (including closed)
 - **Error handling**: Warn and continue when possible, fail clearly when not
 - **Git workflow**: User managed - no auto-commits from trace
 
@@ -243,7 +280,7 @@ Critical differentiator - make these trivial:
 
 Key capability - ensure:
 - Dependencies can link across project boundaries
-- `trc ready --all` shows work ordered by cross-project blocking
+- `trc ready --project any` shows work ordered by cross-project blocking
 - Moving an issue updates all dependencies pointing to it
 - JSONL files store dependency IDs (may reference other projects)
 

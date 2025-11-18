@@ -19,10 +19,10 @@ trc <command> [<id>] [options] [arguments]
 ```
 
 **Examples**:
-- `trc create "title" --parent abc123`
+- `trc create "title" --description "context" --parent abc123`
 - `trc update abc123 --priority 1`
 - `trc show abc123`
-- `trc list --all`
+- `trc list --project any`
 
 ### Output Formats
 
@@ -76,20 +76,24 @@ Initialized personal project at ~/Documents/tasks
 
 ### `trc create`
 
-Create a new issue.
+Create a new issue. **`--description` is required** to preserve context across sessions.
 
 ```bash
-# Basic
-$ trc create "Fix login bug"
+# Basic (description required)
+$ trc create "Fix login bug" --description "Token refresh failing after 5min"
 Created myapp-abc123: Fix login bug
 
-# With options
+# Empty description opt-out (rare)
+$ trc create "Quick fix" --description ""
+Created myapp-def456: Quick fix
+
+# With all options
 $ trc create "Add OAuth" \
+    --description "Implement OAuth 2.0 flow with Google" \
     --priority 1 \
     --parent myapp-xyz999 \
     --depends-on mylib-def456 \
-    --project myapp \
-    --description "Implement OAuth 2.0 flow"
+    --project myapp
 
 # From stdin (for longer descriptions)
 $ trc create "Complex feature" --description "$(cat <<EOF
@@ -127,9 +131,9 @@ myapp-abc123 [P1] [open] Add authentication
 myapp-def456 [P0] [in_progress] Fix security bug
 
 # All projects
-$ trc list --all
+$ trc list --project any
 
-# Filter by project
+# Filter by specific project
 $ trc list --project mylib
 
 # Filter by status
@@ -152,9 +156,9 @@ $ trc list --sort updated         # By last update
 $ trc list --limit 10
 
 # Options
---all                        Show all projects
---project <name>             Filter by project
---status <status>[,...]      Filter by status
+--project any                Show all projects (or specify project name)
+--status any                 Show all statuses (or specify specific status)
+--status <status>[,...]      Filter by status (open, closed, in_progress, blocked)
 --priority <N>[,...]         Filter by priority
 --parent <id>                Show children of parent
 --no-children                Exclude issues with parents (top-level only)
@@ -335,25 +339,56 @@ Moved myapp-abc123 → mylib-abc123
 
 ---
 
-### `trc relate`
+### `trc add-dependency`
 
-Add related-to relationship between issues.
+Add dependencies to existing issues.
 
 ```bash
-# Add related link
+# Add blocking dependency (default)
+$ trc add-dependency myapp-abc123 mylib-def456
+Added blocks dependency: myapp-abc123 → mylib-def456
+
+# Add parent dependency
+$ trc add-dependency myapp-abc123 myapp-xyz999 --type parent
+Added parent dependency: myapp-abc123 → myapp-xyz999
+
+# Add related dependency
+$ trc add-dependency myapp-abc123 myapp-def456 --type related
+Added related dependency: myapp-abc123 → myapp-def456
+
+# Cross-project dependencies work too
+$ trc add-dependency myapp-abc123 otherproject-ghi789 --type blocks
+Added blocks dependency: myapp-abc123 → otherproject-ghi789
+
+# Options
+--type <type>                Dependency type: blocks, parent, or related (default: blocks)
+```
+
+**Use Cases:**
+- Add blocking dependencies after creating issues
+- Link related work without reparenting
+- Establish cross-project dependencies
+- Organize work structure as understanding evolves
+
+**Note:** The `--depends-on` flag in `trc create` creates blocking dependencies at creation time. Use `add-dependency` to add any dependency type to existing issues.
+
+---
+
+### `trc relate` *(Future)*
+
+Quick shorthand for adding related-to relationships.
+
+```bash
+# Add related link (future)
 $ trc relate myapp-abc123 myapp-def456
 Linked myapp-abc123 ↔ myapp-def456 (related)
 
-# Remove related link
+# Remove related link (future)
 $ trc relate myapp-abc123 myapp-def456 --remove
 Removed link between myapp-abc123 and myapp-def456
-
-# Show related issues
-$ trc show myapp-abc123
-...
-Related:
-  - myapp-def456 [open] Similar bug in other module
 ```
+
+**Note:** Currently use `trc add-dependency <id> <other-id> --type related` for this functionality.
 
 ---
 
@@ -370,24 +405,19 @@ myapp-abc123 [P0] Fix security bug
 myapp-def456 [P1] Add OAuth
 
 # All projects
-$ trc ready --all
+$ trc ready --project any
 
-# Grouped by project
-$ trc ready --all --by-project
-=== myapp (3 ready) ===
-myapp-abc123 [P0] Fix security bug
-myapp-def456 [P1] Add OAuth
-myapp-ghi789 [P2] Update docs
-
-=== mylib (1 ready) ===
-mylib-jkl012 [P1] Add new API
+# With status filtering
+$ trc ready --status any                # All statuses
+$ trc ready --status in_progress        # Only in_progress issues
+$ trc ready                            # Default: open issues only
 
 # Limit results
 $ trc ready --limit 5
 
 # Options
---all                        All projects
---by-project                 Group by project
+--project any                All projects (or specify project name)
+--status any                 All statuses (default: open)
 --limit <N>                  Limit results
 --json                       JSON output
 ```
@@ -444,10 +474,9 @@ $ trc search "bug" --project myapp
 $ trc search "oauth" --status open --priority 0,1
 
 # Options
---project <name>             Limit to project
+--project <name>             Limit to project (use 'any' for all projects - default)
 --status <status>            Filter by status
 --priority <N>               Filter by priority
---all                        Search all projects (default)
 --json                       JSON output
 ```
 
@@ -630,10 +659,10 @@ Suggestion: Close children first, or use --force to override
 ```bash
 #!/bin/bash
 echo "Ready to work on:"
-trc ready --all --limit 5
+trc ready --project any --limit 5
 
 echo "\nIn progress:"
-trc list --status in_progress --all
+trc list --status in_progress --project any
 ```
 
 ### Weekly Summary
@@ -641,10 +670,10 @@ trc list --status in_progress --all
 ```bash
 #!/bin/bash
 echo "Closed this week:"
-trc list --status closed --all | wc -l
+trc list --status closed --project any | wc -l
 
 echo "\nTop priorities:"
-trc ready --priority 0,1 --all
+trc list --priority 0,1 --status open --project any
 ```
 
 ### AI Context Builder

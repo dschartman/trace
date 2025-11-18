@@ -12,6 +12,56 @@ Trace is designed specifically for **AI agent workflows** where:
 
 **Key insight**: Structure is a tool for thinking, not a constraint. Start natural, reorganize freely.
 
+## Mandatory Descriptions: Context Across Sessions
+
+**All `trc create` commands require `--description`** to preserve context for future sessions.
+
+### Why Mandatory?
+
+AI agents work across multiple sessions. When you or another agent returns to a work item days later, the description provides critical context that the title alone cannot convey.
+
+### Good Descriptions
+Even brief descriptions are valuable:
+```bash
+# Good: Provides context
+trc create "Fix login timeout" --description "Users getting logged out after 5min, should be 30min"
+
+# Good: Links to investigation
+trc create "Optimize slow queries" --description "See analysis in #database channel. Focus on user_activity table."
+
+# Good: Even minimal context helps
+trc create "Update docs" --description "Reflect new --description requirement"
+
+# Good: Reference to parent
+trc create "Add tests" --description "See parent for scope" --parent feature-abc
+```
+
+### Empty String Opt-Out
+If truly no context is needed (rare), explicitly opt-out:
+```bash
+trc create "Quick fix" --description ""
+```
+
+### Bad: Skipping Description
+```bash
+# ❌ This will error - description is required
+trc create "Fix bug"
+```
+
+### Why This Matters
+
+Without descriptions:
+- ❌ Future agents can't understand work context
+- ❌ Priority and scope are unclear
+- ❌ Dependencies and reasoning are lost
+- ❌ Work items become stale and forgotten
+
+With descriptions:
+- ✅ Work is self-documenting
+- ✅ Context persists across sessions and agents
+- ✅ Decision-making is faster
+- ✅ Reorganization is easier with full context
+
 ## When to Use Trace vs TodoWrite
 
 ### Use Trace for:
@@ -40,25 +90,25 @@ Trace has **no enforced hierarchy**. There are no epics, features, stories, or t
 
 **Fine-grained:**
 ```bash
-trc create "Add authentication"
-trc create "Install oauth2 library" --parent auth-abc123
-trc create "Create /login endpoint" --parent auth-abc123
-trc create "Add password hashing" --parent auth-abc123
-trc create "Write tests for auth flow" --parent auth-abc123
+trc create "Add authentication" --description "OAuth2 + Google, see security requirements doc"
+trc create "Install oauth2 library" --description "Research passport vs oauth2orize" --parent auth-abc123
+trc create "Create /login endpoint" --description "Handle callback and token exchange" --parent auth-abc123
+trc create "Add password hashing" --description "Use bcrypt with salt rounds=10" --parent auth-abc123
+trc create "Write tests for auth flow" --description "Cover login, logout, token refresh" --parent auth-abc123
 ```
 
 **Coarse-grained:**
 ```bash
-trc create "Add authentication system"
-trc create "Add API endpoints for data export"
+trc create "Add authentication system" --description "Full OAuth2 implementation with Google SSO"
+trc create "Add API endpoints for data export" --description "CSV and JSON formats, paginated"
 ```
 
 **Mixed (most common):**
 ```bash
-trc create "Refactor data layer"
-trc create "Extract database logic to service" --parent refactor-abc
-trc create "Add caching" --parent refactor-abc
-trc create "Update documentation"  # No parent - standalone
+trc create "Refactor data layer" --description "Extract ORM logic, prepare for multi-tenancy"
+trc create "Extract database logic to service" --description "Create DataService class" --parent refactor-abc
+trc create "Add caching" --description "Redis for query results" --parent refactor-abc
+trc create "Update documentation" --description "API docs for v2 endpoints"  # No parent - standalone
 ```
 
 ### Start Natural, Adjust Later
@@ -89,15 +139,15 @@ User: "Add user notifications to the app"
 
 Agent: Let me break this down in trace...
 [Creates parent issue]
-trc create "Add user notifications"
+trc create "Add user notifications" --description "In-app + email, see PRD in docs/notifications.md"
 
 [Explores codebase, discovers approach]
-trc create "Add notification schema to database" --parent app-abc123
-trc create "Create notification service" --parent app-abc123
-trc create "Add UI for notification center" --parent app-abc123
+trc create "Add notification schema to database" --description "New notifications table with user_id, type, read_at" --parent app-abc123
+trc create "Create notification service" --description "Handle creation, marking as read, email dispatch" --parent app-abc123
+trc create "Add UI for notification center" --description "Bell icon + dropdown, real-time updates via SSE" --parent app-abc123
 
 [While exploring, notices bug]
-trc create "Bug: notification timestamps not timezone-aware"
+trc create "Bug: notification timestamps not timezone-aware" --description "All timestamps stored as UTC but displayed without conversion"
 
 [Starts work, uses TodoWrite for immediate tracking]
 TodoWrite: [Implementing notification schema...]
@@ -109,7 +159,7 @@ Trace shines for work spanning multiple repositories:
 
 ```bash
 # In your app repo
-trc create "Add real-time updates" --depends-on mylib-websocket-xyz
+trc create "Add real-time updates" --description "Use WebSocket from mylib once ready" --depends-on mylib-websocket-xyz
 
 # Work on library first
 cd ~/Repos/mylib
@@ -128,12 +178,12 @@ trc ready  # Now shows app work is unblocked
 
 ```bash
 # High-level parent
-trc create "Add multi-tenant support"
+trc create "Add multi-tenant support" --description "Isolate data per customer, see architecture doc"
 
 # Break down as you learn more
-trc create "Design tenant isolation model" --parent tenant-abc
-trc create "Add tenant_id to all tables" --parent tenant-abc
-trc create "Update queries for tenant filtering" --parent tenant-abc
+trc create "Design tenant isolation model" --description "Research row-level security vs separate schemas" --parent tenant-abc
+trc create "Add tenant_id to all tables" --description "Migration script needed, estimate ~20 tables" --parent tenant-abc
+trc create "Update queries for tenant filtering" --description "Add WHERE tenant_id clauses throughout codebase" --parent tenant-abc
 
 # View the plan
 trc tree tenant-abc
@@ -146,27 +196,27 @@ trc ready
 
 ```bash
 # While exploring codebase
-trc create "Security: API keys in logs"
-trc create "Bug: Race condition in cache update"
-trc create "Tech debt: Using deprecated XML parser"
+trc create "Security: API keys in logs" --description "Found in auth.log line 342, remove before prod deploy"
+trc create "Bug: Race condition in cache update" --description "Multiple workers writing simultaneously, use distributed lock"
+trc create "Tech debt: Using deprecated XML parser" --description "lxml is deprecated, migrate to defusedxml"
 
 # Link related work
-trc create "Upgrade to new XML library" --depends-on app-cache-bug
+trc create "Upgrade to new XML library" --description "Blocked on cache fix testing" --depends-on app-cache-bug
 ```
 
 ### 3. Iterative Refinement
 
 ```bash
 # Initial plan
-trc create "Optimize database queries"
-trc create "Add indexes" --parent opt-abc
+trc create "Optimize database queries" --description "Page load times >3s, target <500ms"
+trc create "Add indexes" --description "Start with user_activity table" --parent opt-abc
 
 # After investigation, refine
-trc create "Analyze slow queries first" --parent opt-abc
+trc create "Analyze slow queries first" --description "Use EXPLAIN ANALYZE on top 10 slowest" --parent opt-abc
 trc reparent opt-indexes opt-abc  # Make indexes a child too
 
 # Discover it's bigger than expected
-trc create "Migrate to connection pooling" --parent opt-abc
+trc create "Migrate to connection pooling" --description "Hitting max connections at peak load" --parent opt-abc
 ```
 
 ### 4. Cross-Session Continuity
@@ -175,48 +225,62 @@ Trace persists across sessions, so work can continue seamlessly:
 
 ```
 Session 1 (Agent):
-  trc create "Refactor auth system"
-  trc create "Extract validation logic" --parent auth-abc
-  trc create "Add unit tests" --parent auth-abc
+  trc create "Refactor auth system" --description "Extract validation, add OAuth support"
+  trc create "Extract validation logic" --description "Move to validators.py module" --parent auth-abc
+  trc create "Add unit tests" --description "Cover all validation edge cases" --parent auth-abc
   [Completes first subtask]
   trc close auth-extract-xyz
 
 Session 2 (Days later, different agent):
   trc ready  # Shows "Add unit tests" is ready
+  trc show auth-tests-xyz  # Reads description to understand context
   [Continues work naturally]
 ```
 
 ## Best Practices
 
-### 1. Create Parents Early
-If work has obvious sub-tasks, create the parent immediately:
+### 1. Always Add Descriptions
+Descriptions are mandatory and preserve context:
 ```bash
+# ✅ Good - provides context
+trc create "Add payment processing" --description "Stripe integration, webhook for subscription events"
+
+# ✅ Acceptable - minimal but useful
+trc create "Fix typo" --description "In auth error message"
+
+# ❌ Bad - will error
 trc create "Add payment processing"
-# Don't wait - create children as you plan
-trc create "Integrate Stripe API" --parent payment-abc
-trc create "Add webhook handling" --parent payment-abc
 ```
 
-### 2. Use Descriptive Titles
+### 2. Create Parents Early
+If work has obvious sub-tasks, create the parent immediately:
+```bash
+trc create "Add payment processing" --description "Stripe integration, webhook for subscription events"
+# Don't wait - create children as you plan
+trc create "Integrate Stripe API" --description "Setup API keys, test mode first" --parent payment-abc
+trc create "Add webhook handling" --description "Handle payment.succeeded event" --parent payment-abc
+```
+
+### 3. Use Descriptive Titles
 Good: "Add OAuth2 authentication with Google"
 Better than: "Auth stuff"
 
-### 3. Mark Work Complete
+### 4. Mark Work Complete
 Always close issues when done:
 ```bash
 trc close myapp-abc123
 ```
 
-### 4. Check Ready Work
+### 5. Check Ready Work
 Before asking "what should I work on?":
 ```bash
 trc ready  # Current project
 trc ready --all  # All projects
 ```
 
-### 5. Link Dependencies Explicitly
+### 6. Link Dependencies Explicitly
 ```bash
-trc create "Update frontend to use new API" --depends-on backend-api-xyz
+trc create "Update frontend to use new API" --description "Waiting for /v2/users endpoint" --depends-on backend-api-xyz
 ```
 
 ## Integration with TodoWrite
@@ -244,13 +308,14 @@ myapp-abc123 [open] Add OAuth authentication
 
 ### Essential Commands
 ```bash
-trc create "title"                    # Create issue
-trc create "title" --parent <id>      # Create child issue
-trc ready                             # Show ready work
-trc list                              # List all issues
-trc show <id>                         # Show details
-trc close <id>                        # Mark complete
-trc tree <id>                         # View hierarchy
+trc create "title" --description "context"           # Create issue (description required)
+trc create "title" --description "context" --parent <id>  # Create child issue
+trc create "title" --description ""                  # Opt-out of description (rare)
+trc ready                                            # Show ready work
+trc list                                             # List all issues
+trc show <id>                                        # Show details
+trc close <id>                                       # Mark complete
+trc tree <id>                                        # View hierarchy
 ```
 
 ### Reorganization
@@ -262,9 +327,9 @@ trc move <id> <project>               # Move to different project
 
 ### Advanced
 ```bash
-trc create "title" --depends-on <id>  # Add blocker
-trc ready --all                       # Cross-project ready work
-trc list --all                        # All projects
+trc create "title" --description "context" --depends-on <id>  # Add blocker
+trc ready --all                                               # Cross-project ready work
+trc list --all                                                # All projects
 ```
 
 ## Output for CLAUDE.md

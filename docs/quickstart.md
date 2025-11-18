@@ -34,8 +34,10 @@ This creates:
 
 ### 2. Create Your First Issue
 
+**Note**: `--description` is required to preserve context across sessions:
+
 ```bash
-trc create "Add user authentication"
+trc create "Add user authentication" --description "OAuth2 + Google SSO for web and mobile"
 ```
 
 Output:
@@ -50,11 +52,11 @@ The ID format is `{project}-{6-char-hash}`.
 Create child tasks with `--parent`:
 
 ```bash
-trc create "Research OAuth libraries" --parent myproject-a7k3m2
-trc create "Design login flow" --parent myproject-a7k3m2
-trc create "Implement Google login" --parent myproject-a7k3m2
-trc create "Add logout functionality" --parent myproject-a7k3m2
-trc create "Write integration tests" --parent myproject-a7k3m2
+trc create "Research OAuth libraries" --description "Compare passport vs oauth2orize" --parent myproject-a7k3m2
+trc create "Design login flow" --description "UX mockups and token refresh strategy" --parent myproject-a7k3m2
+trc create "Implement Google login" --description "OAuth2 callback handling" --parent myproject-a7k3m2
+trc create "Add logout functionality" --description "Clear sessions and tokens" --parent myproject-a7k3m2
+trc create "Write integration tests" --description "Test login, logout, token refresh" --parent myproject-a7k3m2
 ```
 
 ### 4. View the Hierarchy
@@ -120,25 +122,27 @@ trc close myproject-b8n4x3
 
 ### Creating Issues
 
-```bash
-# Basic
-trc create "Issue title"
+**Note**: `--description` is **required** for all issues to preserve context.
 
-# With description
-trc create "Issue title" --description "Detailed description"
+```bash
+# Basic (description required)
+trc create "Issue title" --description "Context for this work"
+
+# Empty description opt-out (rare)
+trc create "Quick fix" --description ""
 
 # With priority (0=critical, 4=backlog, default=2)
-trc create "Critical bug" --priority 0
+trc create "Critical bug" --description "Production down, fix ASAP" --priority 0
 
 # With parent
-trc create "Subtask" --parent myproject-abc123
+trc create "Subtask" --description "See parent for context" --parent myproject-abc123
 
 # With blocking dependency
-trc create "Feature" --depends-on mylib-def456
+trc create "Feature" --description "Waiting for library update" --depends-on mylib-def456
 
 # All together
 trc create "Complex task" \
-    --description "Full details here" \
+    --description "Full implementation details here" \
     --priority 1 \
     --parent myproject-abc123 \
     --depends-on mylib-def456 \
@@ -192,6 +196,11 @@ trc reparent myproject-child123 myproject-newparent456
 # Remove parent
 trc reparent myproject-child123 none
 
+# Add dependency to existing issue
+trc add-dependency myproject-abc123 myproject-def456  # blocks by default
+trc add-dependency myproject-abc123 myproject-def456 --type parent
+trc add-dependency myproject-abc123 myproject-def456 --type related
+
 # Move to different project
 trc move myproject-abc123 targetproject
 ```
@@ -211,14 +220,14 @@ trc close myproject-abc123
 
 ```bash
 # 1. Create parent feature
-trc create "Add notifications"
+trc create "Add notifications" --description "In-app + email, see PRD in docs/"
 # Output: Created myapp-a1b2c3
 
 # 2. Break down into tasks
-trc create "Design notification schema" --parent myapp-a1b2c3
-trc create "Implement email notifications" --parent myapp-a1b2c3
-trc create "Implement push notifications" --parent myapp-a1b2c3
-trc create "Add notification settings UI" --parent myapp-a1b2c3
+trc create "Design notification schema" --description "User preferences, read/unread state" --parent myapp-a1b2c3
+trc create "Implement email notifications" --description "Use SendGrid API" --parent myapp-a1b2c3
+trc create "Implement push notifications" --description "FCM for mobile, SSE for web" --parent myapp-a1b2c3
+trc create "Add notification settings UI" --description "Toggle switches for each type" --parent myapp-a1b2c3
 
 # 3. Check ready work
 trc ready
@@ -241,12 +250,12 @@ trc close myapp-a1b2c3
 ```bash
 # In library project
 cd ~/repos/mylib
-trc create "Add WebSocket support"
+trc create "Add WebSocket support" --description "Real-time event streaming API"
 # Output: Created mylib-x7y8z9
 
 # In app project
 cd ~/repos/myapp
-trc create "Use WebSocket in UI" --depends-on mylib-x7y8z9
+trc create "Use WebSocket in UI" --description "Live updates for dashboard" --depends-on mylib-x7y8z9
 # Output: Created myapp-a1b2c3
 # Output:   Depends-on: mylib-x7y8z9
 
@@ -268,8 +277,8 @@ trc ready
 
 ```bash
 # Create issues
-trc create "Fix bug in auth flow"
-trc create "Update documentation"
+trc create "Fix bug in auth flow" --description "Token refresh failing after 5min"
+trc create "Update documentation" --description "Add new API endpoints to README"
 
 # Changes are automatically in .trace/issues.jsonl
 git status
@@ -291,15 +300,15 @@ trc list  # Shows the new issues
 
 ```bash
 # Start exploring an idea
-trc create "Investigate caching strategies"
-trc create "Research Redis vs Memcached" --parent ...
-trc create "Benchmark different approaches" --parent ...
+trc create "Investigate caching strategies" --description "Target <100ms response times"
+trc create "Research Redis vs Memcached" --description "Compare features and performance" --parent ...
+trc create "Benchmark different approaches" --description "Load test with production traffic" --parent ...
 
 # As you learn more, reorganize
 trc reparent myapp-abc123 myapp-newparent
 
 # Create blockers as needed
-trc create "Set up Redis cluster" --depends-on myinfra-def456
+trc create "Set up Redis cluster" --description "3-node cluster for HA" --depends-on myinfra-def456
 ```
 
 ## Tips & Tricks
@@ -326,6 +335,7 @@ Available statuses:
 - **Use parent-child for decomposition**: Break large features into smaller tasks
 - **Use blocks for dependencies**: When one issue must complete before another
 - **Use related for context**: Link related issues without blocking
+- **Add dependencies later**: Use `trc add-dependency` to add relationships after creating issues
 
 ### Git Workflow
 

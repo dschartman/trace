@@ -25,14 +25,14 @@ $ cd ~/Repos/myapp
 $ trc init
 Initialized project: myapp
 
-# Create an issue
-$ trc create "Add authentication system"
+# Create an issue (description required for context)
+$ trc create "Add authentication system" --description "OAuth2 + Google SSO"
 Created myapp-abc123: Add authentication system
 
 # Break it down
-$ trc create "Research OAuth libraries" --parent myapp-abc123
-$ trc create "Implement Google login" --parent myapp-abc123
-$ trc create "Add tests" --parent myapp-abc123
+$ trc create "Research OAuth libraries" --description "Compare passport vs oauth2orize" --parent myapp-abc123
+$ trc create "Implement Google login" --description "Handle token exchange and validation" --parent myapp-abc123
+$ trc create "Add tests" --description "Cover login, logout, token refresh flows" --parent myapp-abc123
 
 # View the tree
 $ trc tree myapp-abc123
@@ -65,16 +65,13 @@ See [AI Agent Integration Guide](docs/ai-agent-guide.md) for comprehensive guida
 ```bash
 # Working in your app
 $ cd ~/Repos/myapp
-$ trc create "Use new API endpoint" --depends-on mylib-xyz999
+$ trc create "Use new API endpoint" --description "Migrate from v1 to v2 API" --depends-on mylib-xyz999
 Created myapp-abc123 (blocked by mylib-xyz999)
 
 # View ready work across all projects
-$ trc ready --all --by-project
-=== mylib (1 ready) ===
+$ trc ready --project any
 mylib-xyz999 [P1] Add new API endpoint
-
-=== myapp (0 ready) ===
-(myapp-abc123 blocked by mylib-xyz999)
+   └─ blocks: myapp-abc123
 ```
 
 ### Flexible Reorganization
@@ -94,7 +91,7 @@ $ trc update myapp-abc123 --depends-on mylib-def456
 
 ```bash
 # Before creating a project
-$ trc create "Explore distributed caching"
+$ trc create "Explore distributed caching" --description "Research Redis vs Memcached for session storage"
 Created default-abc123 in default project
 
 # Later, promote to real project
@@ -106,10 +103,10 @@ $ trc move default-abc123 --to-project distcache
 ```bash
 # Automatically detects project from git repo
 $ cd ~/Repos/myapp
-$ trc create "Fix bug"  # Auto-tagged as project: myapp
+$ trc create "Fix bug" --description "Button click not registering on mobile"  # Auto-tagged as project: myapp
 
 # Override when needed
-$ trc create "Task" --project other-project
+$ trc create "Task" --description "Context" --project other-project
 ```
 
 ## Architecture
@@ -161,8 +158,8 @@ Use trace to structure thinking before committing to a project.
 
 ```bash
 # Explore concept in default project
-$ trc create "Distributed cache system"
-$ trc create "Research consistency models" --parent ...
+$ trc create "Distributed cache system" --description "Design for multi-region support"
+$ trc create "Research consistency models" --description "Compare eventual vs strong consistency" --parent ...
 
 # When ready, promote to real project
 $ trc move default-* --to-project distcache
@@ -174,9 +171,9 @@ AI explores a codebase and creates issues for problems found.
 
 ```bash
 # While reading code
-Claude: trc create "Security: plaintext passwords"
-Claude: trc create "Bug: session timeout not enforced"
-Claude: trc create "Tech debt: deprecated library"
+Claude: trc create "Security: plaintext passwords" --description "Found in auth.py line 42, migrate to bcrypt"
+Claude: trc create "Bug: session timeout not enforced" --description "Sessions persisting beyond configured 30min limit"
+Claude: trc create "Tech debt: deprecated library" --description "Using lxml 4.x, upgrade to defusedxml"
 ```
 
 ### 4. Cross-Project Coordination
@@ -188,7 +185,7 @@ Track dependencies across your entire project ecosystem.
 $ trc create "Add notifications" --project myapp \
     --depends-on mylib-websockets
 
-$ trc ready --all  # Shows library work must come first
+$ trc ready --project any  # Shows library work must come first
 ```
 
 ## Design Principles
