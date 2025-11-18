@@ -1888,6 +1888,7 @@ immediate, single-session task tracking. Trace is for everything else.
 - `trc show <id>` - See full details including dependencies
 - `trc list` - List all issues in current project
 - `trc close <id>` - Mark work as complete
+- `trc update <id>` - Update existing issue (supports --title, --description, --priority, --status)
 - `trc add-dependency <id> <depends-on-id>` - Add blocking dependency to existing issue
 - `trc add-dependency <id> <parent-id> --type parent` - Add parent to existing issue
 - `trc add-dependency <id> <related-id> --type related` - Link related issues
