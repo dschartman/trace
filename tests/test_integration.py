@@ -1,11 +1,9 @@
 """Integration tests for end-to-end workflows."""
 
 import subprocess
-import os
-from pathlib import Path
 import re
-
-import pytest
+from typer.testing import CliRunner
+from trc_main import app
 
 
 def extract_issue_id(output: str) -> str:
@@ -16,7 +14,7 @@ def extract_issue_id(output: str) -> str:
     raise ValueError(f"Could not extract issue ID from: {output}")
 
 
-def test_feature_planning_workflow(tmp_path, tmp_trace_dir, monkeypatch, capsys):
+def test_feature_planning_workflow(tmp_path, tmp_trace_dir, monkeypatch):
     """Test complete feature planning workflow.
 
     Workflow:
@@ -27,7 +25,7 @@ def test_feature_planning_workflow(tmp_path, tmp_trace_dir, monkeypatch, capsys)
     5. Check ready work
     6. Verify JSONL created
     """
-    from trc_main import cli_init, cli_create, cli_tree, cli_ready, cli_list
+    runner = CliRunner()
 
     # Setup project
     project = tmp_path / "myapp"
@@ -37,53 +35,41 @@ def test_feature_planning_workflow(tmp_path, tmp_trace_dir, monkeypatch, capsys)
     monkeypatch.chdir(project)
 
     # Initialize trace
-    result = cli_init()
-    assert result == 0
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 0
     assert (project / ".trace" / "issues.jsonl").exists()
 
     # Create parent feature
-    capsys.readouterr()
-    result = cli_create("Add authentication")
-    assert result == 0
-    captured = capsys.readouterr()
-    parent_id = extract_issue_id(captured.out)
+    result = runner.invoke(app, ["create", "Add authentication", "--description", ""])
+    assert result.exit_code == 0
+    parent_id = extract_issue_id(result.output)
 
     # Create child tasks
-    capsys.readouterr()
-    cli_create("Design auth flow", parent=parent_id)
-    captured = capsys.readouterr()
-    child1_id = extract_issue_id(captured.out)
+    result = runner.invoke(app, ["create", "Design auth flow", "--description", "", "--parent", parent_id])
+    child1_id = extract_issue_id(result.output)
 
-    capsys.readouterr()
-    cli_create("Implement login", parent=parent_id)
-    captured = capsys.readouterr()
-    child2_id = extract_issue_id(captured.out)
+    result = runner.invoke(app, ["create", "Implement login", "--description", "", "--parent", parent_id])
+    child2_id = extract_issue_id(result.output)
 
-    capsys.readouterr()
-    cli_create("Add logout", parent=parent_id)
-    captured = capsys.readouterr()
-    child3_id = extract_issue_id(captured.out)
+    result = runner.invoke(app, ["create", "Add logout", "--description", "", "--parent", parent_id])
+    child3_id = extract_issue_id(result.output)
 
     # View tree
-    capsys.readouterr()
-    result = cli_tree(parent_id)
-    assert result == 0
-    captured = capsys.readouterr()
-    assert parent_id in captured.out
-    assert child1_id in captured.out
-    assert child2_id in captured.out
-    assert child3_id in captured.out
+    result = runner.invoke(app, ["tree", parent_id])
+    assert result.exit_code == 0
+    assert parent_id in result.output
+    assert child1_id in result.output
+    assert child2_id in result.output
+    assert child3_id in result.output
     # Check for tree structure characters
-    assert any(char in captured.out for char in ["├", "└", "─"])
+    assert any(char in result.output for char in ["├", "└", "─"])
 
     # Check ready work (all children should be ready)
-    capsys.readouterr()
-    result = cli_ready()
-    assert result == 0
-    captured = capsys.readouterr()
-    assert child1_id in captured.out
-    assert child2_id in captured.out
-    assert child3_id in captured.out
+    result = runner.invoke(app, ["ready"])
+    assert result.exit_code == 0
+    assert child1_id in result.output
+    assert child2_id in result.output
+    assert child3_id in result.output
 
     # Verify JSONL contents
     jsonl_path = project / ".trace" / "issues.jsonl"
@@ -95,7 +81,7 @@ def test_feature_planning_workflow(tmp_path, tmp_trace_dir, monkeypatch, capsys)
     assert child3_id in jsonl_content
 
 
-def test_cross_project_dependencies(tmp_path, tmp_trace_dir, monkeypatch, capsys):
+def test_cross_project_dependencies(tmp_path, tmp_trace_dir, monkeypatch):
     """Test cross-project dependency workflow.
 
     Workflow:
@@ -105,7 +91,9 @@ def test_cross_project_dependencies(tmp_path, tmp_trace_dir, monkeypatch, capsys
     4. Check ready work across projects
     5. Verify cross-project blocking
     """
-    from trc_main import cli_init, cli_create, cli_ready, get_db, add_dependency, is_blocked
+    from trc_main import get_db, is_blocked
+
+    runner = CliRunner()
 
     # Create lib project
     lib_project = tmp_path / "mylib"
@@ -119,24 +107,20 @@ def test_cross_project_dependencies(tmp_path, tmp_trace_dir, monkeypatch, capsys
 
     # Initialize both
     monkeypatch.chdir(lib_project)
-    cli_init()
+    runner.invoke(app, ["init"])
 
     monkeypatch.chdir(app_project)
-    cli_init()
+    runner.invoke(app, ["init"])
 
     # Create lib issue
     monkeypatch.chdir(lib_project)
-    capsys.readouterr()
-    cli_create("Add WebSocket support")
-    captured = capsys.readouterr()
-    lib_issue_id = extract_issue_id(captured.out)
+    result = runner.invoke(app, ["create", "Add WebSocket support", "--description", ""])
+    lib_issue_id = extract_issue_id(result.output)
 
     # Create app issue that depends on lib
     monkeypatch.chdir(app_project)
-    capsys.readouterr()
-    cli_create("Use WebSocket in UI", depends_on=lib_issue_id)
-    captured = capsys.readouterr()
-    app_issue_id = extract_issue_id(captured.out)
+    result = runner.invoke(app, ["create", "Use WebSocket in UI", "--description", "", "--depends-on", lib_issue_id])
+    app_issue_id = extract_issue_id(result.output)
 
     # Verify dependency was created
     db = get_db()
@@ -144,18 +128,14 @@ def test_cross_project_dependencies(tmp_path, tmp_trace_dir, monkeypatch, capsys
 
     # Check ready work - lib issue should be ready, app issue should not
     monkeypatch.chdir(lib_project)
-    capsys.readouterr()
-    result = cli_ready()
-    assert result == 0
-    captured = capsys.readouterr()
-    assert lib_issue_id in captured.out
+    result = runner.invoke(app, ["ready"])
+    assert result.exit_code == 0
+    assert lib_issue_id in result.output
 
     monkeypatch.chdir(app_project)
-    capsys.readouterr()
-    result = cli_ready()
-    captured = capsys.readouterr()
+    result = runner.invoke(app, ["ready"])
     # App issue should not appear because it's blocked
-    assert app_issue_id not in captured.out
+    assert app_issue_id not in result.output
 
     db.close()
 
@@ -170,7 +150,9 @@ def test_jsonl_roundtrip(tmp_path, tmp_trace_dir, monkeypatch):
     4. Import from JSONL
     5. Verify all issues restored
     """
-    from trc_main import cli_init, cli_create, get_db, get_issue, export_to_jsonl, import_from_jsonl
+    from trc_main import get_db, get_issue, export_to_jsonl, import_from_jsonl, create_issue, add_dependency, get_dependencies
+
+    runner = CliRunner()
 
     # Create project
     project = tmp_path / "myapp"
@@ -178,12 +160,11 @@ def test_jsonl_roundtrip(tmp_path, tmp_trace_dir, monkeypatch):
     subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
 
     monkeypatch.chdir(project)
-    cli_init()
+    runner.invoke(app, ["init"])
 
     # Create issues with dependencies
     db = get_db()
 
-    from trc_main import create_issue, add_dependency
     parent = create_issue(db, str(project), "myapp", "Parent issue", priority=0)
     child = create_issue(
         db,
@@ -194,6 +175,8 @@ def test_jsonl_roundtrip(tmp_path, tmp_trace_dir, monkeypatch):
         priority=1,
         status="in_progress"
     )
+    assert parent is not None
+    assert child is not None
     add_dependency(db, child["id"], parent["id"], "parent")
 
     # Export to JSONL
@@ -231,7 +214,6 @@ def test_jsonl_roundtrip(tmp_path, tmp_trace_dir, monkeypatch):
     assert child_restored["status"] == "in_progress"
 
     # Verify dependencies restored
-    from trc_main import get_dependencies
     deps = get_dependencies(db, child_id)
     assert len(deps) == 1
     assert deps[0]["depends_on_id"] == parent_id
@@ -240,7 +222,7 @@ def test_jsonl_roundtrip(tmp_path, tmp_trace_dir, monkeypatch):
     db.close()
 
 
-def test_git_pull_simulation(tmp_path, tmp_trace_dir, monkeypatch, capsys):
+def test_git_pull_simulation(tmp_path, tmp_trace_dir, monkeypatch):
     """Test sync after simulated git pull.
 
     Workflow:
@@ -250,9 +232,11 @@ def test_git_pull_simulation(tmp_path, tmp_trace_dir, monkeypatch, capsys):
     4. Run any command
     5. Verify sync detected and imported changes
     """
-    from trc_main import cli_init, cli_create, cli_list, get_db, get_issue
+    from trc_main import get_db, get_issue
     import json
     import time
+
+    runner = CliRunner()
 
     # Create project
     project = tmp_path / "myapp"
@@ -260,17 +244,16 @@ def test_git_pull_simulation(tmp_path, tmp_trace_dir, monkeypatch, capsys):
     subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
 
     monkeypatch.chdir(project)
-    cli_init()
+    runner.invoke(app, ["init"])
 
     # Create initial issue
-    capsys.readouterr()
-    cli_create("Original issue")
-    captured = capsys.readouterr()
-    issue_id = extract_issue_id(captured.out)
+    result = runner.invoke(app, ["create", "Original issue", "--description", ""])
+    issue_id = extract_issue_id(result.output)
 
     # Verify issue exists
     db = get_db()
     issue = get_issue(db, issue_id)
+    assert issue is not None
     assert issue["title"] == "Original issue"
 
     # Simulate git pull by modifying JSONL externally
@@ -297,14 +280,13 @@ def test_git_pull_simulation(tmp_path, tmp_trace_dir, monkeypatch, capsys):
     db.close()
 
     # Run list command (which should trigger sync)
-    capsys.readouterr()
-    result = cli_list()
-    assert result == 0
-    captured = capsys.readouterr()
+    result = runner.invoke(app, ["list"])
+    assert result.exit_code == 0
 
     # Verify changes were imported
     db = get_db()
     updated_issue = get_issue(db, issue_id)
+    assert updated_issue is not None
     assert updated_issue["title"] == "Modified by git pull"
     assert updated_issue["description"] == "This was changed remotely"
 
