@@ -17,6 +17,46 @@ Trace is a cross-project issue tracker designed for iterative planning and reorg
 - **Git-friendly** - JSONL files that merge cleanly
 - **AI-native** - Simple CLI optimized for programmatic use
 
+## Installation
+
+Trace requires Python 3.12+ and uses [uv](https://github.com/astral-sh/uv) for dependency management.
+
+### Install as a Global Tool
+
+For regular use across all your projects:
+
+```bash
+# Clone the repository
+git clone https://github.com/dschartman/trace.git
+cd trace
+
+# Install globally using uv
+uv tool install .
+```
+
+This makes the `trc` command available system-wide.
+
+### Install for Development
+
+If you want to contribute or modify trace while having it available globally:
+
+```bash
+# Clone the repository
+git clone https://github.com/dschartman/trace.git
+cd trace
+
+# Install in editable mode
+uv tool install --editable .
+```
+
+With editable mode, changes you make to the code are immediately reflected in the `trc` command without reinstalling.
+
+### Verify Installation
+
+```bash
+trc --help
+```
+
 ## Quick Start
 
 ```bash
