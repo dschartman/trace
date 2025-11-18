@@ -7,7 +7,7 @@ import pytest
 
 def test_create_issue_with_minimal_fields(db_connection, tmp_trace_dir):
     """Should create issue with only required fields."""
-    from trace import create_issue
+    from trc_main import create_issue
 
     issue = create_issue(
         db=db_connection,
@@ -28,7 +28,7 @@ def test_create_issue_with_minimal_fields(db_connection, tmp_trace_dir):
 
 def test_create_issue_with_all_fields(db_connection):
     """Should create issue with all optional fields."""
-    from trace import create_issue
+    from trc_main import create_issue
 
     issue = create_issue(
         db=db_connection,
@@ -48,7 +48,7 @@ def test_create_issue_with_all_fields(db_connection):
 
 def test_create_issue_sets_utc_timestamps(db_connection):
     """Timestamps should be UTC ISO8601 format."""
-    from trace import create_issue
+    from trc_main import create_issue
 
     issue = create_issue(
         db=db_connection,
@@ -67,7 +67,7 @@ def test_create_issue_sets_utc_timestamps(db_connection):
 
 def test_create_issue_validates_status(db_connection):
     """Should reject invalid status values."""
-    from trace import create_issue
+    from trc_main import create_issue
 
     with pytest.raises(ValueError, match="Invalid status"):
         create_issue(
@@ -81,7 +81,7 @@ def test_create_issue_validates_status(db_connection):
 
 def test_create_issue_validates_priority_range(db_connection):
     """Should reject priority outside 0-4 range."""
-    from trace import create_issue
+    from trc_main import create_issue
 
     with pytest.raises(ValueError, match="Priority must be between 0 and 4"):
         create_issue(
@@ -104,7 +104,7 @@ def test_create_issue_validates_priority_range(db_connection):
 
 def test_create_issue_generates_unique_ids(db_connection):
     """Each issue should get a unique ID."""
-    from trace import create_issue
+    from trc_main import create_issue
 
     issue1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 1")
     issue2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 2")
@@ -114,7 +114,7 @@ def test_create_issue_generates_unique_ids(db_connection):
 
 def test_create_issue_persists_to_database(db_connection):
     """Created issue should be stored in database."""
-    from trace import create_issue
+    from trc_main import create_issue
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
 
@@ -127,7 +127,7 @@ def test_create_issue_persists_to_database(db_connection):
 
 def test_get_issue_by_id(db_connection):
     """Should retrieve issue by ID."""
-    from trace import create_issue, get_issue
+    from trc_main import create_issue, get_issue
 
     created = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
     issue = get_issue(db_connection, created["id"])
@@ -138,7 +138,7 @@ def test_get_issue_by_id(db_connection):
 
 def test_get_issue_returns_none_for_nonexistent_id(db_connection):
     """Should return None if issue doesn't exist."""
-    from trace import get_issue
+    from trc_main import get_issue
 
     issue = get_issue(db_connection, "myapp-nonexistent")
     assert issue is None
@@ -146,7 +146,7 @@ def test_get_issue_returns_none_for_nonexistent_id(db_connection):
 
 def test_list_issues_returns_all_for_project(db_connection):
     """Should list all issues for a project."""
-    from trace import create_issue, list_issues
+    from trc_main import create_issue, list_issues
 
     create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 1")
     create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 2")
@@ -160,7 +160,7 @@ def test_list_issues_returns_all_for_project(db_connection):
 
 def test_list_issues_filters_by_status(db_connection):
     """Should filter issues by status."""
-    from trace import create_issue, list_issues
+    from trc_main import create_issue, list_issues
 
     create_issue(db_connection, "/path/to/myapp", "myapp", "Open", status="open")
     create_issue(db_connection, "/path/to/myapp", "myapp", "Closed", status="closed")
@@ -173,7 +173,7 @@ def test_list_issues_filters_by_status(db_connection):
 
 def test_list_issues_sorts_by_priority_then_created(db_connection):
     """Should sort by priority (ascending) then created_at (descending)."""
-    from trace import create_issue, list_issues
+    from trc_main import create_issue, list_issues
     import time
 
     # Create in specific order
@@ -193,7 +193,7 @@ def test_list_issues_sorts_by_priority_then_created(db_connection):
 
 def test_update_issue_modifies_fields(db_connection):
     """Should update issue fields."""
-    from trace import create_issue, update_issue, get_issue
+    from trc_main import create_issue, update_issue, get_issue
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Original")
 
@@ -216,7 +216,7 @@ def test_update_issue_modifies_fields(db_connection):
 
 def test_update_issue_updates_timestamp(db_connection):
     """Should update updated_at timestamp."""
-    from trace import create_issue, update_issue, get_issue
+    from trc_main import create_issue, update_issue, get_issue
     import time
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
@@ -232,7 +232,7 @@ def test_update_issue_updates_timestamp(db_connection):
 
 def test_update_issue_validates_status(db_connection):
     """Should reject invalid status in update."""
-    from trace import create_issue, update_issue
+    from trc_main import create_issue, update_issue
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
 
@@ -242,7 +242,7 @@ def test_update_issue_validates_status(db_connection):
 
 def test_update_issue_validates_priority(db_connection):
     """Should reject invalid priority in update."""
-    from trace import create_issue, update_issue
+    from trc_main import create_issue, update_issue
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
 
@@ -252,7 +252,7 @@ def test_update_issue_validates_priority(db_connection):
 
 def test_close_issue_sets_status_and_timestamp(db_connection):
     """Should set status to closed and record closed_at."""
-    from trace import create_issue, close_issue, get_issue
+    from trc_main import create_issue, close_issue, get_issue
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
 
@@ -266,7 +266,7 @@ def test_close_issue_sets_status_and_timestamp(db_connection):
 
 def test_close_issue_updates_updated_at(db_connection):
     """Closing should update the updated_at timestamp."""
-    from trace import create_issue, close_issue, get_issue
+    from trc_main import create_issue, close_issue, get_issue
     import time
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
@@ -282,7 +282,7 @@ def test_close_issue_updates_updated_at(db_connection):
 
 def test_reopen_issue_clears_closed_at(db_connection):
     """Reopening should clear closed_at timestamp."""
-    from trace import create_issue, close_issue, update_issue, get_issue
+    from trc_main import create_issue, close_issue, update_issue, get_issue
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
     close_issue(db_connection, issue["id"])
@@ -297,7 +297,7 @@ def test_reopen_issue_clears_closed_at(db_connection):
 
 def test_list_issues_returns_empty_for_no_matches(db_connection):
     """Should return empty list when no issues match."""
-    from trace import list_issues
+    from trc_main import list_issues
 
     issues = list_issues(db_connection, project_id="/nonexistent")
 
@@ -306,7 +306,7 @@ def test_list_issues_returns_empty_for_no_matches(db_connection):
 
 def test_create_issue_handles_empty_description(db_connection):
     """Should accept empty description."""
-    from trace import create_issue
+    from trc_main import create_issue
 
     issue = create_issue(
         db_connection, "/path/to/myapp", "myapp", "Test", description=""
@@ -317,7 +317,7 @@ def test_create_issue_handles_empty_description(db_connection):
 
 def test_update_issue_partial_update(db_connection):
     """Should update only specified fields."""
-    from trace import create_issue, update_issue, get_issue
+    from trc_main import create_issue, update_issue, get_issue
 
     issue = create_issue(
         db_connection,

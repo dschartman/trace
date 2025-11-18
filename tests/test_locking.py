@@ -10,7 +10,7 @@ import pytest
 
 def test_file_lock_context_manager(tmp_path):
     """Should acquire and release lock using context manager."""
-    from trace import file_lock
+    from trc_main import file_lock
 
     lock_path = tmp_path / ".lock"
 
@@ -23,7 +23,7 @@ def test_file_lock_context_manager(tmp_path):
 
 def test_file_lock_prevents_concurrent_access(tmp_path):
     """Two processes should not acquire lock simultaneously."""
-    from trace import file_lock, LockError
+    from trc_main import file_lock, LockError
 
     lock_path = tmp_path / ".lock"
 
@@ -37,7 +37,7 @@ def test_file_lock_prevents_concurrent_access(tmp_path):
 
 def test_file_lock_releases_on_exit(tmp_path):
     """Lock should release when context exits."""
-    from trace import file_lock
+    from trc_main import file_lock
 
     lock_path = tmp_path / ".lock"
 
@@ -51,7 +51,7 @@ def test_file_lock_releases_on_exit(tmp_path):
 
 def test_file_lock_releases_on_exception(tmp_path):
     """Lock should release even if exception occurs."""
-    from trace import file_lock
+    from trc_main import file_lock
 
     lock_path = tmp_path / ".lock"
 
@@ -68,7 +68,7 @@ def test_file_lock_releases_on_exception(tmp_path):
 
 def test_file_lock_creates_lock_file_if_missing(tmp_path):
     """Should create lock file if it doesn't exist."""
-    from trace import file_lock
+    from trc_main import file_lock
 
     lock_path = tmp_path / ".lock"
     assert not lock_path.exists()
@@ -79,7 +79,7 @@ def test_file_lock_creates_lock_file_if_missing(tmp_path):
 
 def test_file_lock_timeout(tmp_path):
     """Should timeout if can't acquire lock."""
-    from trace import file_lock, LockError
+    from trc_main import file_lock, LockError
 
     lock_path = tmp_path / ".lock"
 
@@ -97,7 +97,7 @@ def test_file_lock_timeout(tmp_path):
 
 def test_file_lock_concurrent_threads(tmp_path):
     """Should handle concurrent access from multiple threads."""
-    from trace import file_lock
+    from trc_main import file_lock
 
     lock_path = tmp_path / ".lock"
     counter = {"value": 0}
@@ -127,7 +127,7 @@ def test_file_lock_concurrent_threads(tmp_path):
 
 def test_file_lock_with_stale_lock(tmp_path):
     """Should handle stale lock files gracefully."""
-    from trace import file_lock
+    from trc_main import file_lock
 
     lock_path = tmp_path / ".lock"
 

@@ -5,7 +5,7 @@ import pytest
 
 def test_reparent_changes_parent(db_connection):
     """Should change parent of an issue."""
-    from trace import create_issue, add_dependency, reparent_issue, get_dependencies
+    from trc_main import create_issue, add_dependency, reparent_issue, get_dependencies
 
     old_parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Old Parent")
     new_parent = create_issue(db_connection, "/path/to/myapp", "myapp", "New Parent")
@@ -27,7 +27,7 @@ def test_reparent_changes_parent(db_connection):
 
 def test_reparent_removes_old_parent(db_connection):
     """Should remove old parent dependency."""
-    from trace import create_issue, add_dependency, reparent_issue, get_dependencies
+    from trc_main import create_issue, add_dependency, reparent_issue, get_dependencies
 
     old_parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Old Parent")
     new_parent = create_issue(db_connection, "/path/to/myapp", "myapp", "New Parent")
@@ -44,7 +44,7 @@ def test_reparent_removes_old_parent(db_connection):
 
 def test_reparent_detects_direct_cycle(db_connection):
     """Should prevent creating direct cycle (child -> parent -> child)."""
-    from trace import create_issue, add_dependency, reparent_issue
+    from trc_main import create_issue, add_dependency, reparent_issue
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
@@ -58,7 +58,7 @@ def test_reparent_detects_direct_cycle(db_connection):
 
 def test_reparent_detects_indirect_cycle(db_connection):
     """Should prevent creating indirect cycle (A -> B -> C -> A)."""
-    from trace import create_issue, add_dependency, reparent_issue
+    from trc_main import create_issue, add_dependency, reparent_issue
 
     issue_a = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue A")
     issue_b = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue B")
@@ -75,7 +75,7 @@ def test_reparent_detects_indirect_cycle(db_connection):
 
 def test_reparent_allows_moving_to_sibling(db_connection):
     """Should allow reparenting to sibling (no cycle)."""
-    from trace import create_issue, add_dependency, reparent_issue, get_dependencies
+    from trc_main import create_issue, add_dependency, reparent_issue, get_dependencies
 
     grandparent = create_issue(db_connection, "/path/to/myapp", "myapp", "Grandparent")
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
@@ -99,7 +99,7 @@ def test_reparent_allows_moving_to_sibling(db_connection):
 
 def test_reparent_with_none_removes_parent(db_connection):
     """Should remove parent when reparenting to None."""
-    from trace import create_issue, add_dependency, reparent_issue, get_dependencies
+    from trc_main import create_issue, add_dependency, reparent_issue, get_dependencies
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
@@ -117,7 +117,7 @@ def test_reparent_with_none_removes_parent(db_connection):
 
 def test_reparent_preserves_other_dependencies(db_connection):
     """Should preserve blocks and related dependencies."""
-    from trace import create_issue, add_dependency, reparent_issue, get_dependencies
+    from trc_main import create_issue, add_dependency, reparent_issue, get_dependencies
 
     old_parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Old Parent")
     new_parent = create_issue(db_connection, "/path/to/myapp", "myapp", "New Parent")
@@ -139,7 +139,7 @@ def test_reparent_preserves_other_dependencies(db_connection):
 
 def test_move_issue_to_different_project(db_connection):
     """Should move issue to different project."""
-    from trace import create_issue, move_issue, get_issue
+    from trc_main import create_issue, move_issue, get_issue
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue to move")
 
@@ -155,7 +155,7 @@ def test_move_issue_to_different_project(db_connection):
 
 def test_move_updates_dependencies(db_connection):
     """Should update dependencies when moving issue."""
-    from trace import create_issue, add_dependency, move_issue, get_dependencies, get_issue
+    from trc_main import create_issue, add_dependency, move_issue, get_dependencies, get_issue
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
@@ -175,7 +175,7 @@ def test_move_updates_dependencies(db_connection):
 
 def test_move_updates_children_dependencies(db_connection):
     """When moving parent, children's dependencies should be updated."""
-    from trace import create_issue, add_dependency, move_issue, get_dependencies
+    from trc_main import create_issue, add_dependency, move_issue, get_dependencies
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
@@ -194,7 +194,7 @@ def test_move_updates_children_dependencies(db_connection):
 
 def test_move_preserves_issue_data(db_connection):
     """Should preserve title, description, status, priority when moving."""
-    from trace import create_issue, move_issue, get_issue
+    from trc_main import create_issue, move_issue, get_issue
 
     issue = create_issue(
         db_connection,
@@ -218,7 +218,7 @@ def test_move_preserves_issue_data(db_connection):
 
 def test_move_deletes_old_issue(db_connection):
     """Should delete old issue after moving."""
-    from trace import create_issue, move_issue, get_issue
+    from trc_main import create_issue, move_issue, get_issue
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue")
     old_id = issue["id"]
@@ -231,7 +231,7 @@ def test_move_deletes_old_issue(db_connection):
 
 def test_move_handles_cross_project_dependencies(db_connection):
     """Should handle existing cross-project dependencies."""
-    from trace import create_issue, add_dependency, move_issue, get_dependencies
+    from trc_main import create_issue, add_dependency, move_issue, get_dependencies
 
     lib_issue = create_issue(db_connection, "/path/to/mylib", "mylib", "Lib Issue")
     app_issue = create_issue(db_connection, "/path/to/myapp", "myapp", "App Issue")
@@ -249,7 +249,7 @@ def test_move_handles_cross_project_dependencies(db_connection):
 
 def test_reparent_cross_project_parent(db_connection):
     """Should allow reparenting to issue in different project."""
-    from trace import create_issue, add_dependency, reparent_issue, get_dependencies
+    from trc_main import create_issue, add_dependency, reparent_issue, get_dependencies
 
     lib_parent = create_issue(db_connection, "/path/to/mylib", "mylib", "Lib Parent")
     app_child = create_issue(db_connection, "/path/to/myapp", "myapp", "App Child")

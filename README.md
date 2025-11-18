@@ -4,6 +4,8 @@
 
 Trace is a cross-project issue tracker designed for iterative planning and reorganization with AI assistants like Claude Code. It combines the brilliant ideas from [Beads](https://github.com/steveyegge/beads) with cross-project support and reorganization-first design.
 
+**Command**: `trc` (the command-line tool is called `trc` for brevity)
+
 ## Why Trace?
 
 **Problem**: AI agents need to break down work, track progress across sessions, and reorganize plans as understanding evolves - but traditional issue trackers are repo-specific, rigid, and heavyweight.
@@ -20,29 +22,41 @@ Trace is a cross-project issue tracker designed for iterative planning and reorg
 ```bash
 # Initialize trace in a project
 $ cd ~/Repos/myapp
-$ trace init
+$ trc init
 Initialized project: myapp
 
-# Create an issue
-$ trace create "Add authentication system"
+# Create an issue (description required for context)
+$ trc create "Add authentication system" --description "OAuth2 + Google SSO"
 Created myapp-abc123: Add authentication system
 
 # Break it down
-$ trace create "Research OAuth libraries" --parent myapp-abc123
-$ trace create "Implement Google login" --parent myapp-abc123
-$ trace create "Add tests" --parent myapp-abc123
+$ trc create "Research OAuth libraries" --description "Compare passport vs oauth2orize" --parent myapp-abc123
+$ trc create "Implement Google login" --description "Handle token exchange and validation" --parent myapp-abc123
+$ trc create "Add tests" --description "Cover login, logout, token refresh flows" --parent myapp-abc123
 
 # View the tree
-$ trace tree myapp-abc123
+$ trc tree myapp-abc123
 myapp-abc123 Add authentication system [open]
  myapp-def456 Research OAuth libraries [open]
  myapp-ghi789 Implement Google login [open]
  myapp-jkl012 Add tests [open]
 
 # See what's ready to work on
-$ trace ready
+$ trc ready
 myapp-def456 [P2] Research OAuth libraries
 ```
+
+## For AI Agents
+
+Trace is designed specifically for AI workflows. Run `trc guide` to get integration instructions for your CLAUDE.md file.
+
+**Key principles for agents:**
+- Use trace proactively - don't wait for users to ask
+- Prefer trace over TodoWrite for non-trivial work
+- Start with natural granularity, reorganize as understanding evolves
+- Think of trace as your external memory across sessions
+
+See [AI Agent Integration Guide](docs/ai-agent-guide.md) for comprehensive guidance.
 
 ## Key Features
 
@@ -51,40 +65,37 @@ myapp-def456 [P2] Research OAuth libraries
 ```bash
 # Working in your app
 $ cd ~/Repos/myapp
-$ trace create "Use new API endpoint" --depends-on mylib-xyz999
+$ trc create "Use new API endpoint" --description "Migrate from v1 to v2 API" --depends-on mylib-xyz999
 Created myapp-abc123 (blocked by mylib-xyz999)
 
 # View ready work across all projects
-$ trace ready --all --by-project
-=== mylib (1 ready) ===
+$ trc ready --project any
 mylib-xyz999 [P1] Add new API endpoint
-
-=== myapp (0 ready) ===
-(myapp-abc123 blocked by mylib-xyz999)
+   └─ blocks: myapp-abc123
 ```
 
 ### Flexible Reorganization
 
 ```bash
 # New information changes your approach
-$ trace reparent myapp-abc123 --parent myapp-xyz999
+$ trc reparent myapp-abc123 --parent myapp-xyz999
 
 # Move work between projects
-$ trace move default-abc123 --to-project myapp
+$ trc move default-abc123 --to-project myapp
 
 # Add/remove dependencies
-$ trace update myapp-abc123 --depends-on mylib-def456
+$ trc update myapp-abc123 --depends-on mylib-def456
 ```
 
 ### Default Project (Discovery Inbox)
 
 ```bash
 # Before creating a project
-$ trace create "Explore distributed caching"
+$ trc create "Explore distributed caching" --description "Research Redis vs Memcached for session storage"
 Created default-abc123 in default project
 
 # Later, promote to real project
-$ trace move default-abc123 --to-project distcache
+$ trc move default-abc123 --to-project distcache
 ```
 
 ### Auto-Detection
@@ -92,10 +103,10 @@ $ trace move default-abc123 --to-project distcache
 ```bash
 # Automatically detects project from git repo
 $ cd ~/Repos/myapp
-$ trace create "Fix bug"  # Auto-tagged as project: myapp
+$ trc create "Fix bug" --description "Button click not registering on mobile"  # Auto-tagged as project: myapp
 
 # Override when needed
-$ trace create "Task" --project other-project
+$ trc create "Task" --description "Context" --project other-project
 ```
 
 ## Architecture
@@ -147,11 +158,11 @@ Use trace to structure thinking before committing to a project.
 
 ```bash
 # Explore concept in default project
-$ trace create "Distributed cache system"
-$ trace create "Research consistency models" --parent ...
+$ trc create "Distributed cache system" --description "Design for multi-region support"
+$ trc create "Research consistency models" --description "Compare eventual vs strong consistency" --parent ...
 
 # When ready, promote to real project
-$ trace move default-* --to-project distcache
+$ trc move default-* --to-project distcache
 ```
 
 ### 3. Discovering Work
@@ -160,9 +171,9 @@ AI explores a codebase and creates issues for problems found.
 
 ```bash
 # While reading code
-Claude: trace create "Security: plaintext passwords"
-Claude: trace create "Bug: session timeout not enforced"
-Claude: trace create "Tech debt: deprecated library"
+Claude: trc create "Security: plaintext passwords" --description "Found in auth.py line 42, migrate to bcrypt"
+Claude: trc create "Bug: session timeout not enforced" --description "Sessions persisting beyond configured 30min limit"
+Claude: trc create "Tech debt: deprecated library" --description "Using lxml 4.x, upgrade to defusedxml"
 ```
 
 ### 4. Cross-Project Coordination
@@ -171,10 +182,10 @@ Track dependencies across your entire project ecosystem.
 
 ```bash
 # App depends on library changes
-$ trace create "Add notifications" --project myapp \
+$ trc create "Add notifications" --project myapp \
     --depends-on mylib-websockets
 
-$ trace ready --all  # Shows library work must come first
+$ trc ready --project any  # Shows library work must come first
 ```
 
 ## Design Principles

@@ -15,27 +15,27 @@
 ### Standard Pattern
 
 ```bash
-trace <command> [<id>] [options] [arguments]
+trc <command> [<id>] [options] [arguments]
 ```
 
 **Examples**:
-- `trace create "title" --parent abc123`
-- `trace update abc123 --priority 1`
-- `trace show abc123`
-- `trace list --all`
+- `trc create "title" --description "context" --parent abc123`
+- `trc update abc123 --priority 1`
+- `trc show abc123`
+- `trc list --project any`
 
 ### Output Formats
 
 **Default**: Human-readable text
 ```bash
-$ trace list
+$ trc list
 myapp-abc123 [P1] Add authentication
 myapp-def456 [P0] Fix security bug
 ```
 
 **JSON**: Machine-readable (for AI/scripts)
 ```bash
-$ trace list --json
+$ trc list --json
 [
   {
     "id": "myapp-abc123",
@@ -53,18 +53,18 @@ $ trace list --json
 
 ## Core Commands
 
-### `trace init`
+### `trc init`
 
 Initialize a new project in current directory.
 
 ```bash
 # Basic usage
-$ trace init
+$ trc init
 Initialized project: myapp (/Users/don/Repos/myapp)
 Created .trace/issues.jsonl
 
 # Initialize personal/default project
-$ trace init --personal ~/Documents/tasks
+$ trc init --personal ~/Documents/tasks
 Initialized personal project at ~/Documents/tasks
 
 # Options
@@ -74,25 +74,29 @@ Initialized personal project at ~/Documents/tasks
 
 ---
 
-### `trace create`
+### `trc create`
 
-Create a new issue.
+Create a new issue. **`--description` is required** to preserve context across sessions.
 
 ```bash
-# Basic
-$ trace create "Fix login bug"
+# Basic (description required)
+$ trc create "Fix login bug" --description "Token refresh failing after 5min"
 Created myapp-abc123: Fix login bug
 
-# With options
-$ trace create "Add OAuth" \
+# Empty description opt-out (rare)
+$ trc create "Quick fix" --description ""
+Created myapp-def456: Quick fix
+
+# With all options
+$ trc create "Add OAuth" \
+    --description "Implement OAuth 2.0 flow with Google" \
     --priority 1 \
     --parent myapp-xyz999 \
     --depends-on mylib-def456 \
-    --project myapp \
-    --description "Implement OAuth 2.0 flow"
+    --project myapp
 
 # From stdin (for longer descriptions)
-$ trace create "Complex feature" --description "$(cat <<EOF
+$ trc create "Complex feature" --description "$(cat <<EOF
 This is a complex feature that requires:
 1. Database changes
 2. API updates
@@ -116,45 +120,45 @@ EOF
 
 ---
 
-### `trace list`
+### `trc list`
 
 List issues with filtering.
 
 ```bash
 # Current project
-$ trace list
+$ trc list
 myapp-abc123 [P1] [open] Add authentication
 myapp-def456 [P0] [in_progress] Fix security bug
 
 # All projects
-$ trace list --all
+$ trc list --project any
 
-# Filter by project
-$ trace list --project mylib
+# Filter by specific project
+$ trc list --project mylib
 
 # Filter by status
-$ trace list --status open
-$ trace list --status closed,in_progress
+$ trc list --status open
+$ trc list --status closed,in_progress
 
 # Filter by priority
-$ trace list --priority 0
-$ trace list --priority 0,1
+$ trc list --priority 0
+$ trc list --priority 0,1
 
 # Combine filters
-$ trace list --status open --priority 0,1 --project myapp
+$ trc list --status open --priority 0,1 --project myapp
 
 # Sort options
-$ trace list --sort priority        # By priority (default)
-$ trace list --sort created         # By creation date
-$ trace list --sort updated         # By last update
+$ trc list --sort priority        # By priority (default)
+$ trc list --sort created         # By creation date
+$ trc list --sort updated         # By last update
 
 # Limit results
-$ trace list --limit 10
+$ trc list --limit 10
 
 # Options
---all                        Show all projects
---project <name>             Filter by project
---status <status>[,...]      Filter by status
+--project any                Show all projects (or specify project name)
+--status any                 Show all statuses (or specify specific status)
+--status <status>[,...]      Filter by status (open, closed, in_progress, blocked)
 --priority <N>[,...]         Filter by priority
 --parent <id>                Show children of parent
 --no-children                Exclude issues with parents (top-level only)
@@ -165,12 +169,12 @@ $ trace list --limit 10
 
 ---
 
-### `trace show`
+### `trc show`
 
 Show detailed information about an issue.
 
 ```bash
-$ trace show myapp-abc123
+$ trc show myapp-abc123
 
 ID:          myapp-abc123
 Project:     myapp (/Users/don/Repos/myapp)
@@ -207,31 +211,31 @@ Dependencies:
 
 ---
 
-### `trace update`
+### `trc update`
 
 Update issue fields.
 
 ```bash
 # Update priority
-$ trace update myapp-abc123 --priority 0
+$ trc update myapp-abc123 --priority 0
 
 # Update status
-$ trace update myapp-abc123 --status in_progress
+$ trc update myapp-abc123 --status in_progress
 
 # Update title
-$ trace update myapp-abc123 --title "New title"
+$ trc update myapp-abc123 --title "New title"
 
 # Update description
-$ trace update myapp-abc123 --description "New description"
+$ trc update myapp-abc123 --description "New description"
 
 # Add dependency
-$ trace update myapp-abc123 --depends-on mylib-def456
+$ trc update myapp-abc123 --depends-on mylib-def456
 
 # Remove dependency
-$ trace update myapp-abc123 --remove-dependency mylib-def456
+$ trc update myapp-abc123 --remove-dependency mylib-def456
 
 # Multiple updates at once
-$ trace update myapp-abc123 \
+$ trc update myapp-abc123 \
     --priority 1 \
     --status in_progress \
     --description "Working on this now"
@@ -248,23 +252,23 @@ $ trace update myapp-abc123 \
 
 ---
 
-### `trace close`
+### `trc close`
 
 Close an issue (shorthand for `update --status closed`).
 
 ```bash
 # Close issue
-$ trace close myapp-abc123
+$ trc close myapp-abc123
 Closed myapp-abc123
 
 # Close with check for children
-$ trace close myapp-abc123
+$ trc close myapp-abc123
 Error: Cannot close issue with open children:
   - myapp-def456 [open] Subtask 1
   - myapp-ghi789 [in_progress] Subtask 2
 
 # Force close (close parent even with open children)
-$ trace close myapp-abc123 --force
+$ trc close myapp-abc123 --force
 Warning: Closing parent with open children
 Closed myapp-abc123
 
@@ -276,24 +280,24 @@ Closed myapp-abc123
 
 ## Reorganization Commands
 
-### `trace reparent`
+### `trc reparent`
 
 Change an issue's parent.
 
 ```bash
 # Add parent
-$ trace reparent myapp-abc123 --parent myapp-xyz999
+$ trc reparent myapp-abc123 --parent myapp-xyz999
 Reparented myapp-abc123 → myapp-xyz999
 
 # Remove parent (make top-level)
-$ trace reparent myapp-abc123 --no-parent
+$ trc reparent myapp-abc123 --no-parent
 Removed parent from myapp-abc123
 
 # Move multiple issues
-$ trace reparent myapp-abc* --parent myapp-xyz999
+$ trc reparent myapp-abc* --parent myapp-xyz999
 
 # Error handling
-$ trace reparent myapp-abc123 --parent myapp-def456
+$ trc reparent myapp-abc123 --parent myapp-def456
 Error: Would create cycle (myapp-def456 is a child of myapp-abc123)
 
 # Options
@@ -304,17 +308,17 @@ Error: Would create cycle (myapp-def456 is a child of myapp-abc123)
 
 ---
 
-### `trace move`
+### `trc move`
 
 Move issue to different project.
 
 ```bash
 # Move single issue
-$ trace move default-abc123 --to-project myapp
+$ trc move default-abc123 --to-project myapp
 Moved default-abc123 → myapp-abc123
 
 # Move with children
-$ trace move myapp-abc123 --to-project mylib --with-children
+$ trc move myapp-abc123 --to-project mylib --with-children
 Moving myapp-abc123 and 3 children to mylib...
   myapp-abc123 → mylib-abc123
   myapp-def456 → mylib-def456
@@ -323,7 +327,7 @@ Moving myapp-abc123 and 3 children to mylib...
 Moved 4 issues
 
 # Dependencies across projects are preserved
-$ trace move myapp-abc123 --to-project mylib
+$ trc move myapp-abc123 --to-project mylib
 Warning: myapp-def456 depends on this issue (cross-project dependency)
 Moved myapp-abc123 → mylib-abc123
 
@@ -335,71 +339,97 @@ Moved myapp-abc123 → mylib-abc123
 
 ---
 
-### `trace relate`
+### `trc add-dependency`
 
-Add related-to relationship between issues.
+Add dependencies to existing issues.
 
 ```bash
-# Add related link
-$ trace relate myapp-abc123 myapp-def456
+# Add blocking dependency (default)
+$ trc add-dependency myapp-abc123 mylib-def456
+Added blocks dependency: myapp-abc123 → mylib-def456
+
+# Add parent dependency
+$ trc add-dependency myapp-abc123 myapp-xyz999 --type parent
+Added parent dependency: myapp-abc123 → myapp-xyz999
+
+# Add related dependency
+$ trc add-dependency myapp-abc123 myapp-def456 --type related
+Added related dependency: myapp-abc123 → myapp-def456
+
+# Cross-project dependencies work too
+$ trc add-dependency myapp-abc123 otherproject-ghi789 --type blocks
+Added blocks dependency: myapp-abc123 → otherproject-ghi789
+
+# Options
+--type <type>                Dependency type: blocks, parent, or related (default: blocks)
+```
+
+**Use Cases:**
+- Add blocking dependencies after creating issues
+- Link related work without reparenting
+- Establish cross-project dependencies
+- Organize work structure as understanding evolves
+
+**Note:** The `--depends-on` flag in `trc create` creates blocking dependencies at creation time. Use `add-dependency` to add any dependency type to existing issues.
+
+---
+
+### `trc relate` *(Future)*
+
+Quick shorthand for adding related-to relationships.
+
+```bash
+# Add related link (future)
+$ trc relate myapp-abc123 myapp-def456
 Linked myapp-abc123 ↔ myapp-def456 (related)
 
-# Remove related link
-$ trace relate myapp-abc123 myapp-def456 --remove
+# Remove related link (future)
+$ trc relate myapp-abc123 myapp-def456 --remove
 Removed link between myapp-abc123 and myapp-def456
-
-# Show related issues
-$ trace show myapp-abc123
-...
-Related:
-  - myapp-def456 [open] Similar bug in other module
 ```
+
+**Note:** Currently use `trc add-dependency <id> <other-id> --type related` for this functionality.
 
 ---
 
 ## Query Commands
 
-### `trace ready`
+### `trc ready`
 
 Show issues ready to work on (no blocking dependencies).
 
 ```bash
 # Current project
-$ trace ready
+$ trc ready
 myapp-abc123 [P0] Fix security bug
 myapp-def456 [P1] Add OAuth
 
 # All projects
-$ trace ready --all
+$ trc ready --project any
 
-# Grouped by project
-$ trace ready --all --by-project
-=== myapp (3 ready) ===
-myapp-abc123 [P0] Fix security bug
-myapp-def456 [P1] Add OAuth
-myapp-ghi789 [P2] Update docs
-
-=== mylib (1 ready) ===
-mylib-jkl012 [P1] Add new API
+# With status filtering
+$ trc ready --status any                # All statuses
+$ trc ready --status in_progress        # Only in_progress issues
+$ trc ready                            # Default: open issues only
 
 # Limit results
-$ trace ready --limit 5
+$ trc ready --limit 5
 
 # Options
---all                        All projects
---by-project                 Group by project
+--project any                All projects (or specify project name)
+--status any                 All statuses (default: open)
 --limit <N>                  Limit results
 --json                       JSON output
 ```
 
 ---
 
-### `trace tree`
+### `trc tree`
 
 Show hierarchical tree view of issue and children.
 
 ```bash
-$ trace tree myapp-abc123
+$ trc tree myapp-abc123
 
 myapp-abc123 Add authentication [open] (2/4 closed)
 ├─ myapp-def456 Research OAuth [closed]
@@ -410,14 +440,14 @@ myapp-abc123 Add authentication [open] (2/4 closed)
 └─ myapp-stu901 Add tests [open]
 
 # Show with dependencies
-$ trace tree myapp-abc123 --with-dependencies
+$ trc tree myapp-abc123 --with-dependencies
 myapp-abc123 Add authentication [blocked]
   depends on: mylib-xyz999 [open]
 ├─ myapp-def456 Research OAuth [closed]
 ...
 
 # Show depth limit
-$ trace tree myapp-abc123 --depth 2
+$ trc tree myapp-abc123 --depth 2
 
 # Options
 --depth <N>                  Limit tree depth
@@ -427,27 +457,26 @@ $ trace tree myapp-abc123 --depth 2
 
 ---
 
-### `trace search`
+### `trc search`
 
 Full-text search across issues.
 
 ```bash
 # Search titles and descriptions
-$ trace search "authentication"
+$ trc search "authentication"
 myapp-abc123 [P1] Add authentication system
 myapp-def456 [P2] Fix authentication bug
 
 # Search in specific project
-$ trace search "bug" --project myapp
+$ trc search "bug" --project myapp
 
 # Search with filters
-$ trace search "oauth" --status open --priority 0,1
+$ trc search "oauth" --status open --priority 0,1
 
 # Options
---project <name>             Limit to project
+--project <name>             Limit to project (use 'any' for all projects - default)
 --status <status>            Filter by status
 --priority <N>               Filter by priority
---all                        Search all projects (default)
 --json                       JSON output
 ```
 
@@ -455,23 +484,23 @@ $ trace search "oauth" --status open --priority 0,1
 
 ## Utility Commands
 
-### `trace projects`
+### `trc projects`
 
 List all registered projects.
 
 ```bash
-$ trace projects
+$ trc projects
 default      ~/.trace/default
 myapp        ~/Repos/myapp
 mylib        ~/Repos/mylib
-trace        ~/Repos/trace
+trc        ~/Repos/trace
 
 # With statistics
-$ trace projects --stats
+$ trc projects --stats
 default      ~/.trace/default                  (3 open, 1 closed)
 myapp        ~/Repos/myapp                    (12 open, 8 closed)
 mylib        ~/Repos/mylib                     (5 open, 2 closed)
-trace        ~/Repos/trace                     (8 open, 0 closed)
+trc        ~/Repos/trace                     (8 open, 0 closed)
 
 # Options
 --stats                      Show issue counts
@@ -480,28 +509,28 @@ trace        ~/Repos/trace                     (8 open, 0 closed)
 
 ---
 
-### `trace sync`
+### `trc sync`
 
 Manually sync a project's JSONL file with central database.
 
 ```bash
 # Sync current project
-$ trace sync
+$ trc sync
 Syncing myapp...
 Imported 3 new issues from JSONL
 Exported 5 updated issues to JSONL
 
 # Sync specific project
-$ trace sync --project mylib
+$ trc sync --project mylib
 
 # Sync all projects
-$ trace sync --all
+$ trc sync --all
 
 # Force reimport (rebuild DB from JSONL)
-$ trace sync --force-import
+$ trc sync --force-import
 
 # Force export (rebuild JSONL from DB)
-$ trace sync --force-export
+$ trc sync --force-export
 
 # Options
 --project <name>             Sync specific project
@@ -512,24 +541,24 @@ $ trace sync --force-export
 
 ---
 
-### `trace config`
+### `trc config`
 
 View and update configuration.
 
 ```bash
 # View current config
-$ trace config
+$ trc config
 fallback-project: default
 auto-close-parents: false
 
 # Set fallback project
-$ trace config set fallback-project personal
+$ trc config set fallback-project personal
 
 # Toggle auto-close
-$ trace config set auto-close-parents true
+$ trc config set auto-close-parents true
 
 # Unset value
-$ trace config unset fallback-project
+$ trc config unset fallback-project
 
 # Options
 set <key> <value>            Set config value
@@ -547,7 +576,7 @@ For AI agents creating multiple issues:
 
 ```bash
 # Create from YAML/JSON
-$ trace import issues.yaml
+$ trc import issues.yaml
 
 # issues.yaml:
 issues:
@@ -563,7 +592,7 @@ issues:
 
 ```bash
 # Common patterns
-$ trace template feature "Add notifications" --project myapp
+$ trc template feature "Add notifications" --project myapp
 Created myapp-abc123: Add notifications
 Created myapp-def456: Research notification services
 Created myapp-ghi789: Design notification schema
@@ -576,7 +605,7 @@ Created myapp-mno345: Add tests
 Commands should provide enough context for AI to understand state:
 
 ```bash
-$ trace show myapp-abc123 --json
+$ trc show myapp-abc123 --json
 {
   "id": "myapp-abc123",
   "project": "myapp",
@@ -599,7 +628,7 @@ $ trace show myapp-abc123 --json
 ### Consistent Error Format
 
 ```bash
-$ trace close myapp-abc123
+$ trc close myapp-abc123
 Error: Cannot close issue with open children
   - myapp-def456 [open] Subtask 1
   - myapp-ghi789 [in_progress] Subtask 2
@@ -630,10 +659,10 @@ Suggestion: Close children first, or use --force to override
 ```bash
 #!/bin/bash
 echo "Ready to work on:"
-trace ready --all --limit 5
+trc ready --project any --limit 5
 
 echo "\nIn progress:"
-trace list --status in_progress --all
+trc list --status in_progress --project any
 ```
 
 ### Weekly Summary
@@ -641,10 +670,10 @@ trace list --status in_progress --all
 ```bash
 #!/bin/bash
 echo "Closed this week:"
-trace list --status closed --all | wc -l
+trc list --status closed --project any | wc -l
 
 echo "\nTop priorities:"
-trace ready --priority 0,1 --all
+trc list --priority 0,1 --status open --project any
 ```
 
 ### AI Context Builder
@@ -652,8 +681,8 @@ trace ready --priority 0,1 --all
 ```bash
 #!/bin/bash
 # Get full context for current project
-trace list --current-project --json > /tmp/all-issues.json
-trace ready --current-project --json > /tmp/ready-issues.json
+trc list --current-project --json > /tmp/all-issues.json
+trc ready --current-project --json > /tmp/ready-issues.json
 
 echo "AI: Here are all issues and ready work for analysis"
 ```
@@ -664,12 +693,12 @@ echo "AI: Here are all issues and ready work for analysis"
 
 | Command | Target | With 1000 Issues |
 |---------|--------|------------------|
-| `trace create` | <50ms | <50ms |
-| `trace list` | <100ms | <150ms |
-| `trace show` | <50ms | <50ms |
-| `trace ready` | <200ms | <300ms |
-| `trace tree` | <100ms | <150ms |
-| `trace sync` | <200ms | <500ms |
+| `trc create` | <50ms | <50ms |
+| `trc list` | <100ms | <150ms |
+| `trc show` | <50ms | <50ms |
+| `trc ready` | <200ms | <300ms |
+| `trc tree` | <100ms | <150ms |
+| `trc sync` | <200ms | <500ms |
 
 ---
 
@@ -691,7 +720,7 @@ trace> exit
 ### Watch Mode
 
 ```bash
-$ trace watch
+$ trc watch
 Watching .trace/issues.jsonl for changes...
 [updates when file changes from git pull]
 ```
@@ -700,9 +729,9 @@ Watching .trace/issues.jsonl for changes...
 
 ```bash
 # Bash completion
-$ trace sh<TAB>
+$ trc sh<TAB>
 show
 
-$ trace myapp-<TAB>
+$ trc myapp-<TAB>
 myapp-abc123  myapp-def456  myapp-ghi789
 ```

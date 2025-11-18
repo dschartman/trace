@@ -13,7 +13,7 @@ cd trace
 uv sync
 
 # Verify installation
-uv run python trace.py
+uv run python trc_main.py
 ```
 
 ## Your First Project
@@ -24,7 +24,7 @@ Navigate to your git repository and initialize trace:
 
 ```bash
 cd ~/repos/myproject
-trace init
+trc init
 ```
 
 This creates:
@@ -34,8 +34,10 @@ This creates:
 
 ### 2. Create Your First Issue
 
+**Note**: `--description` is required to preserve context across sessions:
+
 ```bash
-trace create "Add user authentication"
+trc create "Add user authentication" --description "OAuth2 + Google SSO for web and mobile"
 ```
 
 Output:
@@ -50,17 +52,17 @@ The ID format is `{project}-{6-char-hash}`.
 Create child tasks with `--parent`:
 
 ```bash
-trace create "Research OAuth libraries" --parent myproject-a7k3m2
-trace create "Design login flow" --parent myproject-a7k3m2
-trace create "Implement Google login" --parent myproject-a7k3m2
-trace create "Add logout functionality" --parent myproject-a7k3m2
-trace create "Write integration tests" --parent myproject-a7k3m2
+trc create "Research OAuth libraries" --description "Compare passport vs oauth2orize" --parent myproject-a7k3m2
+trc create "Design login flow" --description "UX mockups and token refresh strategy" --parent myproject-a7k3m2
+trc create "Implement Google login" --description "OAuth2 callback handling" --parent myproject-a7k3m2
+trc create "Add logout functionality" --description "Clear sessions and tokens" --parent myproject-a7k3m2
+trc create "Write integration tests" --description "Test login, logout, token refresh" --parent myproject-a7k3m2
 ```
 
 ### 4. View the Hierarchy
 
 ```bash
-trace tree myproject-a7k3m2
+trc tree myproject-a7k3m2
 ```
 
 Output:
@@ -78,7 +80,7 @@ Output:
 See what's unblocked and ready to work on:
 
 ```bash
-trace ready
+trc ready
 ```
 
 Output:
@@ -99,13 +101,13 @@ Ready work (not blocked):
 View details:
 
 ```bash
-trace show myproject-b8n4x3
+trc show myproject-b8n4x3
 ```
 
 Update status:
 
 ```bash
-trace update myproject-b8n4x3 --status in_progress
+trc update myproject-b8n4x3 --status in_progress
 ```
 
 ### 7. Complete Work
@@ -113,32 +115,34 @@ trace update myproject-b8n4x3 --status in_progress
 Close the issue when done:
 
 ```bash
-trace close myproject-b8n4x3
+trc close myproject-b8n4x3
 ```
 
 ## Core Commands
 
 ### Creating Issues
 
-```bash
-# Basic
-trace create "Issue title"
+**Note**: `--description` is **required** for all issues to preserve context.
 
-# With description
-trace create "Issue title" --description "Detailed description"
+```bash
+# Basic (description required)
+trc create "Issue title" --description "Context for this work"
+
+# Empty description opt-out (rare)
+trc create "Quick fix" --description ""
 
 # With priority (0=critical, 4=backlog, default=2)
-trace create "Critical bug" --priority 0
+trc create "Critical bug" --description "Production down, fix ASAP" --priority 0
 
 # With parent
-trace create "Subtask" --parent myproject-abc123
+trc create "Subtask" --description "See parent for context" --parent myproject-abc123
 
 # With blocking dependency
-trace create "Feature" --depends-on mylib-def456
+trc create "Feature" --description "Waiting for library update" --depends-on mylib-def456
 
 # All together
-trace create "Complex task" \
-    --description "Full details here" \
+trc create "Complex task" \
+    --description "Full implementation details here" \
     --priority 1 \
     --parent myproject-abc123 \
     --depends-on mylib-def456 \
@@ -149,58 +153,63 @@ trace create "Complex task" \
 
 ```bash
 # List issues in current project
-trace list
+trc list
 
 # List all issues across projects
-trace list --all
+trc list --all
 
 # Show issue details
-trace show myproject-abc123
+trc show myproject-abc123
 
 # View hierarchy
-trace tree myproject-abc123
+trc tree myproject-abc123
 
 # See ready work
-trace ready
+trc ready
 
 # See ready work across all projects
-trace ready --all
+trc ready --all
 ```
 
 ### Updating Issues
 
 ```bash
 # Change status
-trace update myproject-abc123 --status in_progress
+trc update myproject-abc123 --status in_progress
 
 # Change priority
-trace update myproject-abc123 --priority 0
+trc update myproject-abc123 --priority 0
 
 # Change title
-trace update myproject-abc123 --title "New title"
+trc update myproject-abc123 --title "New title"
 
 # Multiple changes
-trace update myproject-abc123 --priority 1 --status closed
+trc update myproject-abc123 --priority 1 --status closed
 ```
 
 ### Reorganizing
 
 ```bash
 # Change parent
-trace reparent myproject-child123 myproject-newparent456
+trc reparent myproject-child123 myproject-newparent456
 
 # Remove parent
-trace reparent myproject-child123 none
+trc reparent myproject-child123 none
+
+# Add dependency to existing issue
+trc add-dependency myproject-abc123 myproject-def456  # blocks by default
+trc add-dependency myproject-abc123 myproject-def456 --type parent
+trc add-dependency myproject-abc123 myproject-def456 --type related
 
 # Move to different project
-trace move myproject-abc123 targetproject
+trc move myproject-abc123 targetproject
 ```
 
 ### Closing Work
 
 ```bash
 # Close an issue
-trace close myproject-abc123
+trc close myproject-abc123
 
 # Note: Cannot close issues with open children
 ```
@@ -211,29 +220,29 @@ trace close myproject-abc123
 
 ```bash
 # 1. Create parent feature
-trace create "Add notifications"
+trc create "Add notifications" --description "In-app + email, see PRD in docs/"
 # Output: Created myapp-a1b2c3
 
 # 2. Break down into tasks
-trace create "Design notification schema" --parent myapp-a1b2c3
-trace create "Implement email notifications" --parent myapp-a1b2c3
-trace create "Implement push notifications" --parent myapp-a1b2c3
-trace create "Add notification settings UI" --parent myapp-a1b2c3
+trc create "Design notification schema" --description "User preferences, read/unread state" --parent myapp-a1b2c3
+trc create "Implement email notifications" --description "Use SendGrid API" --parent myapp-a1b2c3
+trc create "Implement push notifications" --description "FCM for mobile, SSE for web" --parent myapp-a1b2c3
+trc create "Add notification settings UI" --description "Toggle switches for each type" --parent myapp-a1b2c3
 
 # 3. Check ready work
-trace ready
+trc ready
 
 # 4. Work on tasks (in progress)
-trace update myapp-d4e5f6 --status in_progress
+trc update myapp-d4e5f6 --status in_progress
 
 # 5. Complete tasks
-trace close myapp-d4e5f6
+trc close myapp-d4e5f6
 
 # 6. View progress
-trace tree myapp-a1b2c3
+trc tree myapp-a1b2c3
 
 # 7. Close parent when all children done
-trace close myapp-a1b2c3
+trc close myapp-a1b2c3
 ```
 
 ### Workflow 2: Cross-Project Dependencies
@@ -241,26 +250,26 @@ trace close myapp-a1b2c3
 ```bash
 # In library project
 cd ~/repos/mylib
-trace create "Add WebSocket support"
+trc create "Add WebSocket support" --description "Real-time event streaming API"
 # Output: Created mylib-x7y8z9
 
 # In app project
 cd ~/repos/myapp
-trace create "Use WebSocket in UI" --depends-on mylib-x7y8z9
+trc create "Use WebSocket in UI" --description "Live updates for dashboard" --depends-on mylib-x7y8z9
 # Output: Created myapp-a1b2c3
 # Output:   Depends-on: mylib-x7y8z9
 
 # Check ready work (app issue will be blocked)
-trace ready
+trc ready
 # Shows only mylib-x7y8z9
 
 # Complete library work first
 cd ~/repos/mylib
-trace close mylib-x7y8z9
+trc close mylib-x7y8z9
 
 # Now app work is unblocked
 cd ~/repos/myapp
-trace ready
+trc ready
 # Shows myapp-a1b2c3
 ```
 
@@ -268,8 +277,8 @@ trace ready
 
 ```bash
 # Create issues
-trace create "Fix bug in auth flow"
-trace create "Update documentation"
+trc create "Fix bug in auth flow" --description "Token refresh failing after 5min"
+trc create "Update documentation" --description "Add new API endpoints to README"
 
 # Changes are automatically in .trace/issues.jsonl
 git status
@@ -284,22 +293,22 @@ git push
 git pull
 
 # Trace automatically syncs
-trace list  # Shows the new issues
+trc list  # Shows the new issues
 ```
 
 ### Workflow 4: Exploring Ideas
 
 ```bash
 # Start exploring an idea
-trace create "Investigate caching strategies"
-trace create "Research Redis vs Memcached" --parent ...
-trace create "Benchmark different approaches" --parent ...
+trc create "Investigate caching strategies" --description "Target <100ms response times"
+trc create "Research Redis vs Memcached" --description "Compare features and performance" --parent ...
+trc create "Benchmark different approaches" --description "Load test with production traffic" --parent ...
 
 # As you learn more, reorganize
-trace reparent myapp-abc123 myapp-newparent
+trc reparent myapp-abc123 myapp-newparent
 
 # Create blockers as needed
-trace create "Set up Redis cluster" --depends-on myinfra-def456
+trc create "Set up Redis cluster" --description "3-node cluster for HA" --depends-on myinfra-def456
 ```
 
 ## Tips & Tricks
@@ -326,6 +335,7 @@ Available statuses:
 - **Use parent-child for decomposition**: Break large features into smaller tasks
 - **Use blocks for dependencies**: When one issue must complete before another
 - **Use related for context**: Link related issues without blocking
+- **Add dependencies later**: Use `trc add-dependency` to add relationships after creating issues
 
 ### Git Workflow
 
@@ -348,7 +358,7 @@ Trace requires a git repository. Run `git init` first.
 
 ### "Issue not found"
 
-Make sure you're in the correct project directory, or use `trace list --all` to see all issues.
+Make sure you're in the correct project directory, or use `trc list --all` to see all issues.
 
 ### Lock timeout errors
 
@@ -359,12 +369,12 @@ If you get lock timeout errors, another trace command is running. Wait for it to
 If you get merge conflicts in `.trace/issues.jsonl`:
 1. Resolve the conflict manually (it's just JSON lines)
 2. Ensure valid JSON format
-3. Run `trace list` to verify the sync works
+3. Run `trc list` to verify the sync works
 
 ## Getting Help
 
 - Check `trace` for command list
-- Use `trace <command> --help` for command-specific help
+- Use `trc <command> --help` for command-specific help
 - Review documentation in `docs/` directory
 - Open an issue on GitHub
 

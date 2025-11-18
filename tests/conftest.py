@@ -1,17 +1,24 @@
 """Shared pytest fixtures for trace tests."""
 
 import os
-import shutil
-import sqlite3
-import tempfile
-from pathlib import Path
-
 import pytest
 
 
+def pytest_configure(config):
+    """Set TRACE_TEST_MODE environment variable for all tests.
+
+    This serves as an additional safeguard to prevent tests from
+    accidentally modifying real user data.
+    """
+    os.environ["TRACE_TEST_MODE"] = "1"
+
+
 @pytest.fixture
-def tmp_trace_dir(tmp_path):
+def tmp_trace_dir(tmp_path, monkeypatch):
     """Create a temporary trace directory structure.
+
+    Sets TRACE_HOME environment variable to ensure test isolation.
+    This prevents tests from modifying real user data in ~/.trace/
 
     Returns a dict with paths:
         - home: temporary home directory (~/.trace)
@@ -21,6 +28,9 @@ def tmp_trace_dir(tmp_path):
     """
     trace_home = tmp_path / ".trace"
     trace_home.mkdir()
+
+    # Set TRACE_HOME env var to redirect all operations to temp directory
+    monkeypatch.setenv("TRACE_HOME", str(trace_home))
 
     default_project = trace_home / "default" / ".trace"
     default_project.mkdir(parents=True)
@@ -39,7 +49,7 @@ def db_connection(tmp_trace_dir):
 
     Automatically initializes schema and closes connection after test completes.
     """
-    from trace import init_database
+    from trc_main import init_database
 
     db_path = tmp_trace_dir["db"]
     conn = init_database(str(db_path))

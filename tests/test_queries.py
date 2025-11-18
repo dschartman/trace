@@ -5,7 +5,7 @@ import pytest
 
 def test_tree_shows_parent_with_children(db_connection):
     """Should display parent-child hierarchy."""
-    from trace import create_issue, add_dependency, get_children
+    from trc_main import create_issue, add_dependency, get_children
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent Issue")
     child1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Child 1")
@@ -24,7 +24,7 @@ def test_tree_shows_parent_with_children(db_connection):
 
 def test_tree_handles_deep_nesting(db_connection):
     """Should handle multiple levels of parent-child relationships."""
-    from trace import create_issue, add_dependency, get_children
+    from trc_main import create_issue, add_dependency, get_children
 
     # Create chain: level0 -> level1 -> level2 -> level3
     issues = []
@@ -49,7 +49,7 @@ def test_tree_handles_deep_nesting(db_connection):
 
 def test_tree_handles_multiple_children_per_parent(db_connection):
     """Should handle parents with many children."""
-    from trace import create_issue, add_dependency, get_children
+    from trc_main import create_issue, add_dependency, get_children
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
 
@@ -69,7 +69,7 @@ def test_tree_handles_multiple_children_per_parent(db_connection):
 
 def test_tree_cross_project_parent_child(db_connection):
     """Should support parent-child across different projects."""
-    from trace import create_issue, add_dependency, get_children
+    from trc_main import create_issue, add_dependency, get_children
 
     lib_parent = create_issue(db_connection, "/path/to/mylib", "mylib", "Lib Feature")
     app_child = create_issue(db_connection, "/path/to/myapp", "myapp", "App Feature")
@@ -85,7 +85,7 @@ def test_tree_cross_project_parent_child(db_connection):
 
 def test_ready_returns_unblocked_issues(db_connection):
     """Should return issues without blocking dependencies."""
-    from trace import create_issue, is_blocked
+    from trc_main import create_issue, is_blocked
 
     ready1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Ready 1")
     ready2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Ready 2")
@@ -96,7 +96,7 @@ def test_ready_returns_unblocked_issues(db_connection):
 
 def test_ready_excludes_blocked_issues(db_connection):
     """Should exclude issues blocked by open dependencies."""
-    from trace import create_issue, add_dependency, is_blocked
+    from trc_main import create_issue, add_dependency, is_blocked
 
     blocker = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker", status="open")
     blocked = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocked")
@@ -109,7 +109,7 @@ def test_ready_excludes_blocked_issues(db_connection):
 
 def test_ready_includes_when_blockers_closed(db_connection):
     """Should include issues whose blocking dependencies are closed."""
-    from trace import create_issue, add_dependency, is_blocked, close_issue
+    from trc_main import create_issue, add_dependency, is_blocked, close_issue
 
     blocker = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker")
     dependent = create_issue(db_connection, "/path/to/myapp", "myapp", "Dependent")
@@ -128,7 +128,7 @@ def test_ready_includes_when_blockers_closed(db_connection):
 
 def test_ready_parent_child_does_not_block(db_connection):
     """Parent-child relationships should not block ready work."""
-    from trace import create_issue, add_dependency, is_blocked
+    from trc_main import create_issue, add_dependency, is_blocked
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent", status="open")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
@@ -141,7 +141,7 @@ def test_ready_parent_child_does_not_block(db_connection):
 
 def test_ready_related_does_not_block(db_connection):
     """Related dependencies should not block ready work."""
-    from trace import create_issue, add_dependency, is_blocked
+    from trc_main import create_issue, add_dependency, is_blocked
 
     issue1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 1", status="open")
     issue2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 2")
@@ -154,7 +154,7 @@ def test_ready_related_does_not_block(db_connection):
 
 def test_ready_multiple_blockers(db_connection):
     """Should be blocked if ANY blocker is open."""
-    from trace import create_issue, add_dependency, is_blocked, close_issue
+    from trc_main import create_issue, add_dependency, is_blocked, close_issue
 
     blocker1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker 1", status="open")
     blocker2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker 2", status="open")
@@ -181,7 +181,7 @@ def test_ready_multiple_blockers(db_connection):
 
 def test_ready_cross_project_blocker(db_connection):
     """Should respect blocking dependencies across projects."""
-    from trace import create_issue, add_dependency, is_blocked
+    from trc_main import create_issue, add_dependency, is_blocked
 
     lib_blocker = create_issue(db_connection, "/path/to/mylib", "mylib", "Lib Task", status="open")
     app_blocked = create_issue(db_connection, "/path/to/myapp", "myapp", "App Task")
@@ -193,7 +193,7 @@ def test_ready_cross_project_blocker(db_connection):
 
 def test_ready_list_filters_correctly(db_connection):
     """Should correctly filter ready vs blocked issues in a list."""
-    from trace import create_issue, add_dependency, list_issues, is_blocked
+    from trc_main import create_issue, add_dependency, list_issues, is_blocked
 
     ready1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Ready 1", priority=0)
     ready2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Ready 2", priority=1)
@@ -219,7 +219,7 @@ def test_ready_list_filters_correctly(db_connection):
 
 def test_ready_respects_priority_order(db_connection):
     """Ready issues should be sortable by priority."""
-    from trace import create_issue, list_issues, is_blocked
+    from trc_main import create_issue, list_issues, is_blocked
 
     p2_issue = create_issue(db_connection, "/path/to/myapp", "myapp", "P2 Issue", priority=2)
     p0_issue = create_issue(db_connection, "/path/to/myapp", "myapp", "P0 Issue", priority=0)
@@ -239,7 +239,7 @@ def test_ready_respects_priority_order(db_connection):
 
 def test_has_open_children(db_connection):
     """Should detect if parent has open children."""
-    from trace import create_issue, add_dependency, has_open_children, close_issue
+    from trc_main import create_issue, add_dependency, has_open_children, close_issue
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Child 1", status="open")
@@ -260,7 +260,7 @@ def test_has_open_children(db_connection):
 
 def test_tree_with_mixed_statuses(db_connection):
     """Tree should show issues with different statuses."""
-    from trace import create_issue, add_dependency, get_children
+    from trc_main import create_issue, add_dependency, get_children
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent", status="in_progress")
     child_open = create_issue(db_connection, "/path/to/myapp", "myapp", "Open Child", status="open")

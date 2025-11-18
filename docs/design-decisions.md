@@ -78,19 +78,19 @@ This document captures key design decisions made during trace's development, inc
 - **personal** = permanent task list (implies different use case)
 - Trace is a **project tracker**, not a universal task manager
 - Default project naturally flows: discover → default → promote to real project
-- Name "default" appears in `trace list` output when not in a project (clear context)
+- Name "default" appears in `trc list` output when not in a project (clear context)
 
 **Workflow**:
 ```bash
 # Exploring an idea
-$ trace create "Research distributed caching"  # → default project
+$ trc create "Research distributed caching"  # → default project
 
 # Later, create real project
 $ mkdir ~/Repos/distcache && cd ~/Repos/distcache
-$ trace init
+$ trc init
 
 # Promote work
-$ trace move default-abc123 --to-project distcache
+$ trc move default-abc123 --to-project distcache
 ```
 
 ### Decision: Auto-Detection with Explicit Override
@@ -104,7 +104,7 @@ $ trace move default-abc123 --to-project distcache
 4. Register in central DB
 
 **Benefits**:
-- Zero friction: `trace create "Fix bug"` just works in a repo
+- Zero friction: `trc create "Fix bug"` just works in a repo
 - Explicit when needed: `--project` flag for cross-project operations
 - Clear errors: "No project detected" when outside a repo
 
@@ -128,7 +128,7 @@ $ trace move default-abc123 --to-project distcache
 
 ### Decision: No Auto-Close Parents
 
-**Choice**: Parents require explicit `trace close` action.
+**Choice**: Parents require explicit `trc close` action.
 
 **Rationale**:
 - Parent issues represent different things:
@@ -138,7 +138,7 @@ $ trace move default-abc123 --to-project distcache
 - Auto-closing assumes parent = container only
 - Explicit close gives user control
 
-**Implementation**: `trace close <parent-id>` validates all children are closed, but doesn't auto-close when last child closes.
+**Implementation**: `trc close <parent-id>` validates all children are closed, but doesn't auto-close when last child closes.
 
 ---
 
@@ -154,9 +154,9 @@ $ trace move default-abc123 --to-project distcache
 - YAGNI: Add later if proven necessary
 
 **What was removed**:
-- `--size` flag in `trace create`
-- `--size` flag in `trace update`
-- `--size` filter in `trace list`
+- `--size` flag in `trc create`
+- `--size` flag in `trc update`
+- `--size` filter in `trc list`
 - Size validation logic
 - Size field in database schema
 
@@ -204,7 +204,7 @@ $ trace move default-abc123 --to-project distcache
 
 **User action**: Resolve like code, commit merged version.
 
-**No `trace resolve` command**: Would add complexity for rare case, wouldn't know correct resolution anyway.
+**No `trc resolve` command**: Would add complexity for rare case, wouldn't know correct resolution anyway.
 
 ### Decision: Warn and Continue for Malformed Data
 
@@ -235,7 +235,7 @@ for line_num, line in enumerate(jsonl_file):
 - JSONL is source of truth
 - New users rebuild anyway (clone repo → JSONL present → DB auto-builds)
 - Cross-project metadata may be lost, but that's acceptable
-- Simple recovery: `trace sync --force-import` per project
+- Simple recovery: `trc sync --force-import` per project
 
 **What's lost**: Cross-project dependencies not in any single JSONL file.
 
@@ -255,14 +255,14 @@ for line_num, line in enumerate(jsonl_file):
 - Hooks/automation varies by team
 - Simple: trace writes JSONL, user commits when ready
 
-**Rejected**: `trace commit` command or auto-commit on operations.
+**Rejected**: `trc commit` command or auto-commit on operations.
 
 **Why rejected**: Too opinionated, makes assumptions about user's git workflow.
 
 **Recommended workflow**:
 ```bash
 # After work session
-$ trace list  # Verify state
+$ trc list  # Verify state
 $ git add .trace/issues.jsonl
 $ git commit -m "Update issue tracking"
 ```
@@ -271,7 +271,7 @@ $ git commit -m "Update issue tracking"
 
 ## Default Behaviors
 
-### Decision: `trace list` Shows Flat, Ordered List
+### Decision: `trc list` Shows Flat, Ordered List
 
 **Choice**: Default list view is flat (no hierarchy), ordered by priority/status/created_at.
 
@@ -279,7 +279,7 @@ $ git commit -m "Update issue tracking"
 - **YAGNI**: Start simple, add hierarchy views only if needed
 - Flat list is easy to scan
 - Order matters more than nesting for "what to work on next"
-- `trace tree <id>` exists for hierarchical views
+- `trc tree <id>` exists for hierarchical views
 
 **Ordering**:
 1. Priority (0-4, ascending - P0 first)

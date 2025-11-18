@@ -8,7 +8,7 @@ import pytest
 
 def test_init_db_creates_all_tables(tmp_trace_dir):
     """Should create all required tables."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -25,7 +25,7 @@ def test_init_db_creates_all_tables(tmp_trace_dir):
 
 def test_init_db_creates_issues_table_with_correct_schema(tmp_trace_dir):
     """Issues table should have all required columns with correct types."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -45,7 +45,7 @@ def test_init_db_creates_issues_table_with_correct_schema(tmp_trace_dir):
 
 def test_init_db_creates_projects_table_with_correct_schema(tmp_trace_dir):
     """Projects table should have all required columns."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -59,7 +59,7 @@ def test_init_db_creates_projects_table_with_correct_schema(tmp_trace_dir):
 
 def test_init_db_creates_dependencies_table_with_correct_schema(tmp_trace_dir):
     """Dependencies table should support cross-project links."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -74,7 +74,7 @@ def test_init_db_creates_dependencies_table_with_correct_schema(tmp_trace_dir):
 
 def test_init_db_creates_metadata_table_with_correct_schema(tmp_trace_dir):
     """Metadata table should store key-value pairs."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -87,7 +87,7 @@ def test_init_db_creates_metadata_table_with_correct_schema(tmp_trace_dir):
 
 def test_init_db_creates_indexes(tmp_trace_dir):
     """Should create indexes for common queries."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -108,7 +108,7 @@ def test_init_db_creates_indexes(tmp_trace_dir):
 
 def test_init_db_sets_schema_version(tmp_trace_dir):
     """Should record schema version in metadata."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -121,7 +121,7 @@ def test_init_db_sets_schema_version(tmp_trace_dir):
 
 def test_init_db_enforces_status_constraint(tmp_trace_dir):
     """Should only allow valid status values."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -141,7 +141,7 @@ def test_init_db_enforces_status_constraint(tmp_trace_dir):
 
 def test_init_db_enforces_priority_constraint(tmp_trace_dir):
     """Should only allow priority values 0-4."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -163,7 +163,7 @@ def test_init_db_enforces_priority_constraint(tmp_trace_dir):
 
 def test_init_db_enforces_dependency_type_constraint(tmp_trace_dir):
     """Should only allow valid dependency types."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -194,7 +194,7 @@ def test_init_db_enforces_dependency_type_constraint(tmp_trace_dir):
 
 def test_init_db_sets_default_values(tmp_trace_dir):
     """Should set default values for optional fields."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -215,7 +215,7 @@ def test_init_db_sets_default_values(tmp_trace_dir):
 
 def test_init_db_cascade_deletes_dependencies(tmp_trace_dir):
     """Deleting an issue should cascade delete its dependencies."""
-    from trace import init_database
+    from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
 
@@ -243,7 +243,7 @@ def test_init_db_cascade_deletes_dependencies(tmp_trace_dir):
 
 def test_init_db_is_idempotent(tmp_trace_dir):
     """Calling init_database multiple times should be safe."""
-    from trace import init_database
+    from trc_main import init_database
 
     # Initialize twice
     db1 = init_database(str(tmp_trace_dir["db"]))

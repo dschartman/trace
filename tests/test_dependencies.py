@@ -5,7 +5,7 @@ import pytest
 
 def test_add_parent_dependency(db_connection):
     """Should create parent-child dependency."""
-    from trace import create_issue, add_dependency, get_dependencies
+    from trc_main import create_issue, add_dependency, get_dependencies
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
@@ -21,7 +21,7 @@ def test_add_parent_dependency(db_connection):
 
 def test_add_blocks_dependency(db_connection):
     """Should create blocks dependency."""
-    from trace import create_issue, add_dependency, get_dependencies
+    from trc_main import create_issue, add_dependency, get_dependencies
 
     blocker = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker")
     blocked = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocked")
@@ -37,7 +37,7 @@ def test_add_blocks_dependency(db_connection):
 
 def test_add_related_dependency(db_connection):
     """Should create related dependency."""
-    from trace import create_issue, add_dependency, get_dependencies
+    from trc_main import create_issue, add_dependency, get_dependencies
 
     issue1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 1")
     issue2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 2")
@@ -52,7 +52,7 @@ def test_add_related_dependency(db_connection):
 
 def test_add_cross_project_dependency(db_connection):
     """Should allow dependencies across projects."""
-    from trace import create_issue, add_dependency, get_dependencies
+    from trc_main import create_issue, add_dependency, get_dependencies
 
     lib_issue = create_issue(db_connection, "/path/to/mylib", "mylib", "Add API")
     app_issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Use API")
@@ -67,7 +67,7 @@ def test_add_cross_project_dependency(db_connection):
 
 def test_add_multiple_dependencies(db_connection):
     """Should support multiple dependencies for one issue."""
-    from trace import create_issue, add_dependency, get_dependencies
+    from trc_main import create_issue, add_dependency, get_dependencies
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     blocker = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker")
@@ -86,7 +86,7 @@ def test_add_multiple_dependencies(db_connection):
 
 def test_add_dependency_validates_type(db_connection):
     """Should reject invalid dependency types."""
-    from trace import create_issue, add_dependency
+    from trc_main import create_issue, add_dependency
 
     issue1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 1")
     issue2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 2")
@@ -97,7 +97,7 @@ def test_add_dependency_validates_type(db_connection):
 
 def test_add_dependency_prevents_duplicates(db_connection):
     """Should not create duplicate dependencies."""
-    from trace import create_issue, add_dependency, get_dependencies
+    from trc_main import create_issue, add_dependency, get_dependencies
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
@@ -114,7 +114,7 @@ def test_add_dependency_prevents_duplicates(db_connection):
 
 def test_remove_dependency(db_connection):
     """Should remove dependency."""
-    from trace import create_issue, add_dependency, remove_dependency, get_dependencies
+    from trc_main import create_issue, add_dependency, remove_dependency, get_dependencies
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
@@ -129,7 +129,7 @@ def test_remove_dependency(db_connection):
 
 def test_get_dependencies_returns_empty_for_no_deps(db_connection):
     """Should return empty list if issue has no dependencies."""
-    from trace import create_issue, get_dependencies
+    from trc_main import create_issue, get_dependencies
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
     deps = get_dependencies(db_connection, issue["id"])
@@ -139,7 +139,7 @@ def test_get_dependencies_returns_empty_for_no_deps(db_connection):
 
 def test_get_children(db_connection):
     """Should get all children of a parent issue."""
-    from trace import create_issue, add_dependency, get_children
+    from trc_main import create_issue, add_dependency, get_children
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Child 1")
@@ -158,7 +158,7 @@ def test_get_children(db_connection):
 
 def test_get_children_returns_empty_for_no_children(db_connection):
     """Should return empty list if issue has no children."""
-    from trace import create_issue, get_children
+    from trc_main import create_issue, get_children
 
     issue = create_issue(db_connection, "/path/to/myapp", "myapp", "Test")
     children = get_children(db_connection, issue["id"])
@@ -168,7 +168,7 @@ def test_get_children_returns_empty_for_no_children(db_connection):
 
 def test_get_blockers(db_connection):
     """Should get all issues that block this issue."""
-    from trace import create_issue, add_dependency, get_blockers
+    from trc_main import create_issue, add_dependency, get_blockers
 
     blocker1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker 1")
     blocker2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker 2")
@@ -187,7 +187,7 @@ def test_get_blockers(db_connection):
 
 def test_is_blocked_by_open_issues(db_connection):
     """Should detect if issue is blocked by open issues."""
-    from trace import create_issue, add_dependency, is_blocked
+    from trc_main import create_issue, add_dependency, is_blocked
 
     blocker = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker", status="open")
     blocked = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocked")
@@ -199,7 +199,7 @@ def test_is_blocked_by_open_issues(db_connection):
 
 def test_is_not_blocked_when_blockers_closed(db_connection):
     """Should not be blocked if all blockers are closed."""
-    from trace import create_issue, add_dependency, close_issue, is_blocked
+    from trc_main import create_issue, add_dependency, close_issue, is_blocked
 
     blocker = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocker")
     blocked = create_issue(db_connection, "/path/to/myapp", "myapp", "Blocked")
@@ -212,7 +212,7 @@ def test_is_not_blocked_when_blockers_closed(db_connection):
 
 def test_has_open_children(db_connection):
     """Should detect if issue has open children."""
-    from trace import create_issue, add_dependency, has_open_children
+    from trc_main import create_issue, add_dependency, has_open_children
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Child 1", status="closed")
@@ -226,7 +226,7 @@ def test_has_open_children(db_connection):
 
 def test_no_open_children_when_all_closed(db_connection):
     """Should return False if all children are closed."""
-    from trace import create_issue, add_dependency, close_issue, has_open_children
+    from trc_main import create_issue, add_dependency, close_issue, has_open_children
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Child 1")

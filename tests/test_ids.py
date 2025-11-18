@@ -7,7 +7,7 @@ import pytest
 
 def test_generate_id_returns_correct_format():
     """ID should be in format: {project}-{6-char-hash}."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     id = generate_id("Test issue", "myapp")
 
@@ -20,7 +20,7 @@ def test_generate_id_returns_correct_format():
 
 def test_generate_id_uses_base36_encoding():
     """ID hash should use [0-9a-z] characters only."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     id = generate_id("Test issue", "myapp")
     hash_part = id.split("-")[1]
@@ -30,7 +30,7 @@ def test_generate_id_uses_base36_encoding():
 
 def test_generate_id_is_non_deterministic():
     """Same title at different times generates different IDs."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     id1 = generate_id("Test", "myapp")
     time.sleep(0.001)  # Ensure different timestamp
@@ -41,7 +41,7 @@ def test_generate_id_is_non_deterministic():
 
 def test_generate_id_different_titles_different_ids():
     """Different titles should generate different IDs."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     id1 = generate_id("First issue", "myapp")
     id2 = generate_id("Second issue", "myapp")
@@ -51,7 +51,7 @@ def test_generate_id_different_titles_different_ids():
 
 def test_generate_id_different_projects_different_prefixes():
     """Different projects should have different prefixes."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     id1 = generate_id("Test", "myapp")
     id2 = generate_id("Test", "mylib")
@@ -62,7 +62,7 @@ def test_generate_id_different_projects_different_prefixes():
 
 def test_generate_id_detects_collision_and_retries():
     """When collision occurs, should regenerate ID with different hash."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     existing_ids = {"myapp-abc123", "myapp-def456"}
 
@@ -75,17 +75,17 @@ def test_generate_id_detects_collision_and_retries():
 def test_generate_id_fails_after_max_retries():
     """Should raise exception if can't generate unique ID after max retries."""
     from unittest.mock import patch
-    from trace import generate_id, IDCollisionError
+    from trc_main import generate_id, IDCollisionError
 
     # Mock the hash generation to always return the same value
     # This forces every attempt to generate the same ID
-    with patch("trace.hashlib.sha256") as mock_sha256:
+    with patch("trc_main.hashlib.sha256") as mock_sha256:
         # Make SHA256 always return the same digest
         mock_digest = b"\x12\x34\x56\x78" + b"\x00" * 28
         mock_sha256.return_value.digest.return_value = mock_digest
 
         # Create existing ID that matches what the mocked hash will generate
-        from trace import _to_base36
+        from trc_main import _to_base36
 
         hash_int = int.from_bytes(mock_digest[:4], byteorder="big")
         hash_b36 = _to_base36(hash_int)[:6].zfill(6)
@@ -99,7 +99,7 @@ def test_generate_id_fails_after_max_retries():
 
 def test_generate_id_handles_special_characters_in_title():
     """Should handle special characters, unicode, etc."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     titles = [
         "Fix bug with @user mentions",
@@ -116,7 +116,7 @@ def test_generate_id_handles_special_characters_in_title():
 
 def test_generate_id_handles_empty_title():
     """Should handle empty title gracefully."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     id = generate_id("", "myapp")
     assert id.startswith("myapp-")
@@ -125,7 +125,7 @@ def test_generate_id_handles_empty_title():
 
 def test_generate_id_handles_very_long_title():
     """Should handle very long titles."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     long_title = "A" * 10000
     id = generate_id(long_title, "myapp")
@@ -136,7 +136,7 @@ def test_generate_id_handles_very_long_title():
 
 def test_generate_id_project_name_sanitization():
     """Project names with special chars should be sanitized."""
-    from trace import generate_id
+    from trc_main import generate_id
 
     # Project names should already be sanitized before reaching generate_id,
     # but we test defensive behavior

@@ -25,40 +25,78 @@ uv sync
 ```
 
 ### Testing (Test-First Development)
+**IMPORTANT**: Always use `uv run` prefix for Python commands to ensure correct environment.
+
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run with coverage report
-pytest --cov=trace --cov-report=html
+uv run pytest --cov=trace --cov-report=html
 
 # Run specific test file
-pytest tests/test_ids.py
+uv run pytest tests/test_ids.py
 
 # Run specific test
-pytest tests/test_ids.py::test_generate_id_detects_collision
+uv run pytest tests/test_ids.py::test_generate_id_detects_collision
 
 # Run in verbose mode
-pytest -v
+uv run pytest -v
 
 # Run integration tests only
-pytest tests/test_integration.py
+uv run pytest tests/test_integration.py
 
-# Watch mode (requires pytest-watch)
-ptw
+# Run Python scripts
+uv run python trc_main.py <command>
 ```
 
 ### Code Quality
 ```bash
 # Linting
-ruff check .
+uv run ruff check .
 
 # Type checking
-ty check .
+uv run ty check .
 
 # Format code
-ruff format .
+uv run ruff format .
 ```
+
+### Global Tool Installation
+
+**CRITICAL**: `uv tool install` creates a **copy** of the code, not a symlink.
+
+```bash
+# Install/update globally (makes `trc` command available)
+uv tool install --force .
+
+# Testing during development
+uv run python trc_main.py <command>  # Uses source directly
+trc <command>                         # Uses installed copy
+```
+
+**When making changes to the codebase:**
+
+1. **ALWAYS bump the version in `pyproject.toml`** first
+   - `uv` caches builds by version number
+   - Without a version bump, `uv` will use the cached old version
+   - Example: `0.1.0` → `0.1.1`
+
+2. **Reinstall globally** to test changes:
+   ```bash
+   uv tool uninstall trc
+   uv tool install .
+   ```
+
+3. **Verify the new version** is installed:
+   ```bash
+   uv tool list  # Should show new version number
+   ```
+
+**Why this matters:**
+- During development, use `uv run python trc_main.py` to test changes immediately
+- Before releasing or testing the actual `trc` command, bump version and reinstall
+- This ensures the global `trc` command has your latest changes
 
 ## Architecture
 
@@ -173,7 +211,7 @@ See `docs/implementation-plan.md` for complete breakdown.
 2. **Path-based project IDs**: Absolute paths ensure uniqueness
 3. **Default project**: Discovery inbox at `~/.trace/default/` for pre-project work
 4. **Immediate JSONL export**: Prioritize safety over performance
-5. **Single-file implementation**: Target ~500 lines in `trace.py`
+5. **Single-file implementation**: Target ~500 lines in `trc_main.py`
 6. **No daemon (Phase 1)**: Subprocess is fast enough
 7. **No size field**: Removed - not useful for AI agents
 8. **No auto-close parents**: Parents require explicit close action
@@ -182,10 +220,11 @@ See `docs/implementation-plan.md` for complete breakdown.
 
 ## Default Behaviors
 
-- **`trace list`**: Shows flat list, ordered by priority/status/created_at (YAGNI approach)
+- **`trc list`**: Shows flat list, ordered by priority/status/created_at (YAGNI approach)
   - In project: show that project's issues
   - Outside project: show default project issues
-  - Use `--all` for cross-project view
+  - Use `--project any` for cross-project view
+  - Use `--status any` to show all statuses (including closed)
 - **Error handling**: Warn and continue when possible, fail clearly when not
 - **Git workflow**: User managed - no auto-commits from trace
 
@@ -194,10 +233,10 @@ See `docs/implementation-plan.md` for complete breakdown.
 **Philosophy**: JSONL files are distributed source of truth. Central DB is aggregation.
 
 **Recovery Scenarios**:
-1. **Corrupted SQLite**: Rebuild from JSONL files (`trace sync --force-import`)
+1. **Corrupted SQLite**: Rebuild from JSONL files (`trc sync --force-import`)
 2. **Malformed JSONL**: Warn, skip bad lines, report errors, user fixes manually
 3. **Merge conflicts**: User resolves via git (treat like code)
-4. **Project moved**: Requires manual re-registration (`trace init` in new location)
+4. **Project moved**: Requires manual re-registration (`trc init` in new location)
 5. **Missing JSONL**: Export from DB if exists, create empty if not
 
 **No automation for**: Merge conflicts, data corruption, project migration
@@ -205,8 +244,8 @@ See `docs/implementation-plan.md` for complete breakdown.
 ## Reorganization Commands
 
 Critical differentiator - make these trivial:
-- `trace reparent <id> --parent <parent-id>` - Change parent (with cycle detection)
-- `trace move <id> --to-project <project>` - Move between projects (updates dependencies)
+- `trc reparent <id> --parent <parent-id>` - Change parent (with cycle detection)
+- `trc move <id> --to-project <project>` - Move between projects (updates dependencies)
 - Cross-project moves preserve all relationships
 
 ## Common Pitfalls
@@ -219,29 +258,29 @@ Critical differentiator - make these trivial:
 
 ## File Locations
 
-- Implementation: `trace.py` (single file, ~500 lines target)
+- Implementation: `trc_main.py` (single file, ~500 lines target)
 - Tests: `tests/` directory
 - Docs: `docs/` directory
   - `product-vision.md` - Core philosophy
   - `use-cases.md` - Real-world workflows
   - `key-features.md` - Technical details
   - `cli-design.md` - Command reference
-  - `implementation-plan.md` - Phase-by-phase test specs
+  - `quickstart.md` - Getting started guide
+  - `design-decisions.md` - Important rationale
 
 ## When Working on Features
 
-1. Check `docs/implementation-plan.md` for test specifications
-2. Write tests first (they should fail)
-3. Implement minimal code to pass tests
-4. Run coverage check
-5. Update docs if behavior changes
-6. Ensure JSONL export/import handles new fields
+1. Write tests first (they should fail)
+2. Implement minimal code to pass tests
+3. Run coverage check
+4. Update docs if behavior changes
+5. Ensure JSONL export/import handles new fields
 
 ## Cross-Project Dependencies
 
 Key capability - ensure:
 - Dependencies can link across project boundaries
-- `trace ready --all` shows work ordered by cross-project blocking
+- `trc ready --project any` shows work ordered by cross-project blocking
 - Moving an issue updates all dependencies pointing to it
 - JSONL files store dependency IDs (may reference other projects)
 
@@ -262,6 +301,6 @@ Trace is designed for AI agents (especially Claude Code):
 - Commands have `--json` flag for machine-readable output
 - Error messages are structured and parseable
 - Bulk operations minimize round-trips
-- Context-rich output (e.g., `trace show` includes dependencies, children, completion %)
+- Context-rich output (e.g., `trc show` includes dependencies, children, completion %)
 
 Future: MCP server will expose trace as native Claude Code tool.

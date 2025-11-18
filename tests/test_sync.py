@@ -8,7 +8,7 @@ import pytest
 
 def test_export_to_jsonl_creates_file(db_connection, tmp_path):
     """Should create JSONL file with issues."""
-    from trace import create_issue, export_to_jsonl
+    from trc_main import create_issue, export_to_jsonl
 
     create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 1")
     create_issue(db_connection, "/path/to/myapp", "myapp", "Issue 2")
@@ -23,7 +23,7 @@ def test_export_to_jsonl_creates_file(db_connection, tmp_path):
 
 def test_export_to_jsonl_sorts_by_id(db_connection, tmp_path):
     """Should sort issues by ID for stable diffs."""
-    from trace import create_issue, export_to_jsonl
+    from trc_main import create_issue, export_to_jsonl
 
     # Create in reverse order
     issue2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue Z")
@@ -42,7 +42,7 @@ def test_export_to_jsonl_sorts_by_id(db_connection, tmp_path):
 
 def test_export_to_jsonl_includes_all_fields(db_connection, tmp_path):
     """Should include all issue fields in export."""
-    from trace import create_issue, export_to_jsonl
+    from trc_main import create_issue, export_to_jsonl
 
     issue = create_issue(
         db_connection,
@@ -71,7 +71,7 @@ def test_export_to_jsonl_includes_all_fields(db_connection, tmp_path):
 
 def test_export_to_jsonl_includes_dependencies(db_connection, tmp_path):
     """Should include dependencies inline in issue."""
-    from trace import create_issue, add_dependency, export_to_jsonl
+    from trc_main import create_issue, add_dependency, export_to_jsonl
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
@@ -98,7 +98,7 @@ def test_export_to_jsonl_includes_dependencies(db_connection, tmp_path):
 
 def test_export_to_jsonl_only_exports_project_issues(db_connection, tmp_path):
     """Should only export issues for specified project."""
-    from trace import create_issue, export_to_jsonl
+    from trc_main import create_issue, export_to_jsonl
 
     create_issue(db_connection, "/path/to/myapp", "myapp", "App issue")
     create_issue(db_connection, "/path/to/mylib", "mylib", "Lib issue")
@@ -115,7 +115,7 @@ def test_export_to_jsonl_only_exports_project_issues(db_connection, tmp_path):
 
 def test_export_to_jsonl_handles_empty_project(db_connection, tmp_path):
     """Should create empty file for project with no issues."""
-    from trace import export_to_jsonl
+    from trc_main import export_to_jsonl
 
     jsonl_path = tmp_path / "issues.jsonl"
     export_to_jsonl(db_connection, "/path/to/myapp", str(jsonl_path))
@@ -126,7 +126,7 @@ def test_export_to_jsonl_handles_empty_project(db_connection, tmp_path):
 
 def test_export_to_jsonl_overwrites_existing_file(db_connection, tmp_path):
     """Should overwrite existing JSONL file."""
-    from trace import create_issue, export_to_jsonl
+    from trc_main import create_issue, export_to_jsonl
 
     jsonl_path = tmp_path / "issues.jsonl"
     jsonl_path.write_text("old content\n")
@@ -141,7 +141,7 @@ def test_export_to_jsonl_overwrites_existing_file(db_connection, tmp_path):
 
 def test_import_from_jsonl_creates_issues(db_connection, tmp_path):
     """Should import issues from JSONL file."""
-    from trace import import_from_jsonl, get_issue
+    from trc_main import import_from_jsonl, get_issue
 
     jsonl_path = tmp_path / "issues.jsonl"
     jsonl_path.write_text(
@@ -165,7 +165,7 @@ def test_import_from_jsonl_creates_issues(db_connection, tmp_path):
 
 def test_import_from_jsonl_updates_existing_issues(db_connection, tmp_path):
     """Should update issues that already exist."""
-    from trace import create_issue, import_from_jsonl, get_issue
+    from trc_main import create_issue, import_from_jsonl, get_issue
 
     # Create issue in DB
     create_issue(db_connection, "/path/to/myapp", "myapp", "Old title")
@@ -191,7 +191,7 @@ def test_import_from_jsonl_updates_existing_issues(db_connection, tmp_path):
 
 def test_import_from_jsonl_creates_dependencies(db_connection, tmp_path):
     """Should create dependencies from imported data."""
-    from trace import import_from_jsonl, get_dependencies
+    from trc_main import import_from_jsonl, get_dependencies
 
     jsonl_path = tmp_path / "issues.jsonl"
     jsonl_path.write_text(
@@ -210,7 +210,7 @@ def test_import_from_jsonl_creates_dependencies(db_connection, tmp_path):
 
 def test_import_from_jsonl_skips_invalid_lines(db_connection, tmp_path):
     """Should skip malformed JSON lines and continue."""
-    from trace import import_from_jsonl, get_issue
+    from trc_main import import_from_jsonl, get_issue
 
     jsonl_path = tmp_path / "issues.jsonl"
     jsonl_path.write_text(
@@ -231,7 +231,7 @@ def test_import_from_jsonl_skips_invalid_lines(db_connection, tmp_path):
 
 def test_import_from_jsonl_handles_empty_file(db_connection, tmp_path):
     """Should handle empty JSONL file."""
-    from trace import import_from_jsonl
+    from trc_main import import_from_jsonl
 
     jsonl_path = tmp_path / "issues.jsonl"
     jsonl_path.write_text("")
@@ -244,7 +244,7 @@ def test_import_from_jsonl_handles_empty_file(db_connection, tmp_path):
 
 def test_export_import_roundtrip(db_connection, tmp_path):
     """Export and import should preserve all data."""
-    from trace import create_issue, add_dependency, export_to_jsonl, import_from_jsonl, get_issue
+    from trc_main import create_issue, add_dependency, export_to_jsonl, import_from_jsonl, get_issue
 
     # Create issues with dependencies
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent", priority=0)
@@ -283,7 +283,7 @@ def test_export_import_roundtrip(db_connection, tmp_path):
     assert child_restored["priority"] == 1
     assert child_restored["status"] == "in_progress"
 
-    from trace import get_dependencies
+    from trc_main import get_dependencies
 
     deps = get_dependencies(db_connection, child["id"])
     assert len(deps) == 1
@@ -292,7 +292,7 @@ def test_export_import_roundtrip(db_connection, tmp_path):
 
 def test_get_last_sync_time_returns_none_for_new_project(db_connection):
     """Should return None for project that has never been synced."""
-    from trace import get_last_sync_time
+    from trc_main import get_last_sync_time
 
     result = get_last_sync_time(db_connection, "/path/to/myapp")
 
@@ -301,7 +301,7 @@ def test_get_last_sync_time_returns_none_for_new_project(db_connection):
 
 def test_set_last_sync_time_stores_timestamp(db_connection):
     """Should store sync timestamp for project."""
-    from trace import set_last_sync_time, get_last_sync_time
+    from trc_main import set_last_sync_time, get_last_sync_time
     import time
 
     timestamp = time.time()
@@ -314,7 +314,7 @@ def test_set_last_sync_time_stores_timestamp(db_connection):
 
 def test_set_last_sync_time_updates_existing(db_connection):
     """Should update existing sync timestamp."""
-    from trace import set_last_sync_time, get_last_sync_time
+    from trc_main import set_last_sync_time, get_last_sync_time
 
     set_last_sync_time(db_connection, "/path/to/myapp", 100.0)
     set_last_sync_time(db_connection, "/path/to/myapp", 200.0)
@@ -326,7 +326,7 @@ def test_set_last_sync_time_updates_existing(db_connection):
 
 def test_sync_project_imports_when_jsonl_newer(db_connection, tmp_path):
     """Should import JSONL when file is newer than last sync."""
-    from trace import sync_project, get_issue, set_last_sync_time
+    from trc_main import sync_project, get_issue, set_last_sync_time
     import time
 
     # Create JSONL file
@@ -351,7 +351,7 @@ def test_sync_project_imports_when_jsonl_newer(db_connection, tmp_path):
 
 def test_sync_project_skips_when_db_newer(db_connection, tmp_path):
     """Should skip import when DB is already up-to-date."""
-    from trace import sync_project, create_issue, export_to_jsonl, get_issue, set_last_sync_time
+    from trc_main import sync_project, create_issue, export_to_jsonl, get_issue, set_last_sync_time
     import time
 
     # Create issue in DB
@@ -382,7 +382,7 @@ def test_sync_project_skips_when_db_newer(db_connection, tmp_path):
 
 def test_sync_project_handles_missing_jsonl(db_connection, tmp_path):
     """Should handle missing JSONL gracefully."""
-    from trace import sync_project
+    from trc_main import sync_project
 
     # Should not error
     sync_project(db_connection, str(tmp_path))
@@ -390,7 +390,7 @@ def test_sync_project_handles_missing_jsonl(db_connection, tmp_path):
 
 def test_sync_project_updates_last_sync_time(db_connection, tmp_path):
     """Should update last sync timestamp after import."""
-    from trace import sync_project, get_last_sync_time
+    from trc_main import sync_project, get_last_sync_time
     import time
 
     # Create JSONL file
