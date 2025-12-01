@@ -44,7 +44,7 @@ def test_init_db_creates_issues_table_with_correct_schema(tmp_trace_dir):
 
 
 def test_init_db_creates_projects_table_with_correct_schema(tmp_trace_dir):
-    """Projects table should have all required columns."""
+    """Projects table should have all required columns (new schema v2)."""
     from trc_main import init_database
 
     db = init_database(str(tmp_trace_dir["db"]))
@@ -52,9 +52,10 @@ def test_init_db_creates_projects_table_with_correct_schema(tmp_trace_dir):
     cursor = db.execute("PRAGMA table_info(projects)")
     columns = {row[1]: row[2] for row in cursor.fetchall()}
 
+    # New schema v2
+    assert columns["id"] == "TEXT"
     assert columns["name"] == "TEXT"
-    assert columns["path"] == "TEXT"
-    assert columns["git_remote"] == "TEXT"
+    assert columns["current_path"] == "TEXT"
 
 
 def test_init_db_creates_dependencies_table_with_correct_schema(tmp_trace_dir):
@@ -116,7 +117,7 @@ def test_init_db_sets_schema_version(tmp_trace_dir):
     row = cursor.fetchone()
 
     assert row is not None
-    assert row[0] == "1"
+    assert row[0] == "2"  # Current schema version
 
 
 def test_init_db_enforces_status_constraint(tmp_trace_dir):

@@ -196,8 +196,8 @@ def test_jsonl_roundtrip(tmp_path, tmp_trace_dir, monkeypatch):
     assert get_issue(db, parent_id) is None
     assert get_issue(db, child_id) is None
 
-    # Import from JSONL
-    import_from_jsonl(db, str(jsonl_path))
+    # Import from JSONL (new signature requires project_id)
+    import_from_jsonl(db, str(jsonl_path), project_id=str(project))
 
     # Verify restoration
     parent_restored = get_issue(db, parent_id)
