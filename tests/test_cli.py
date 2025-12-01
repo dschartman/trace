@@ -171,6 +171,155 @@ def test_cli_close_closes_issue(sample_project, tmp_trace_dir, monkeypatch):
     db.close()
 
 
+def test_cli_close_batch_closes_multiple_issues(sample_project, tmp_trace_dir, monkeypatch):
+    """cli_close should close multiple issues when given multiple IDs."""
+    from trc_main import get_db, get_issue
+
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create three issues
+    result1 = runner.invoke(app, ["create", "Issue 1", "--description", ""])
+    issue_id1 = extract_issue_id(result1.output)
+
+    result2 = runner.invoke(app, ["create", "Issue 2", "--description", ""])
+    issue_id2 = extract_issue_id(result2.output)
+
+    result3 = runner.invoke(app, ["create", "Issue 3", "--description", ""])
+    issue_id3 = extract_issue_id(result3.output)
+
+    # Close all three at once
+    result = runner.invoke(app, ["close", issue_id1, issue_id2, issue_id3])
+
+    assert result.exit_code == 0
+    # Verify all three IDs are mentioned in output
+    assert issue_id1 in result.output
+    assert issue_id2 in result.output
+    assert issue_id3 in result.output
+
+    # Verify all are closed
+    db = get_db()
+    issue1 = get_issue(db, issue_id1)
+    issue2 = get_issue(db, issue_id2)
+    issue3 = get_issue(db, issue_id3)
+
+    assert issue1["status"] == "closed"
+    assert issue1["closed_at"] is not None
+    assert issue2["status"] == "closed"
+    assert issue2["closed_at"] is not None
+    assert issue3["status"] == "closed"
+    assert issue3["closed_at"] is not None
+    db.close()
+
+
+def test_cli_close_batch_with_nonexistent_id_continues(sample_project, tmp_trace_dir, monkeypatch):
+    """cli_close should warn about nonexistent IDs but close valid ones."""
+    from trc_main import get_db, get_issue
+
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create two valid issues
+    result1 = runner.invoke(app, ["create", "Issue 1", "--description", ""])
+    issue_id1 = extract_issue_id(result1.output)
+
+    result2 = runner.invoke(app, ["create", "Issue 2", "--description", ""])
+    issue_id2 = extract_issue_id(result2.output)
+
+    # Close with one nonexistent ID in the middle
+    result = runner.invoke(app, ["close", issue_id1, "nonexistent-123", issue_id2])
+
+    # Should succeed but warn
+    assert result.exit_code == 0
+    assert "nonexistent-123" in result.output
+    assert "not found" in result.output.lower() or "warning" in result.output.lower()
+
+    # Verify valid issues are still closed
+    db = get_db()
+    issue1 = get_issue(db, issue_id1)
+    issue2 = get_issue(db, issue_id2)
+
+    assert issue1["status"] == "closed"
+    assert issue2["status"] == "closed"
+    db.close()
+
+
+def test_cli_close_batch_exports_to_jsonl(sample_project, tmp_trace_dir, monkeypatch):
+    """cli_close batch should export all closed issues to JSONL."""
+    import json
+
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create two issues
+    result1 = runner.invoke(app, ["create", "Issue 1", "--description", ""])
+    issue_id1 = extract_issue_id(result1.output)
+
+    result2 = runner.invoke(app, ["create", "Issue 2", "--description", ""])
+    issue_id2 = extract_issue_id(result2.output)
+
+    # Close both
+    runner.invoke(app, ["close", issue_id1, issue_id2])
+
+    # Check JSONL file
+    jsonl_path = sample_project["trace_dir"] / "issues.jsonl"
+    assert jsonl_path.exists()
+
+    # Parse JSONL and verify both are closed
+    closed_issues = []
+    with jsonl_path.open("r") as f:
+        for line in f:
+            issue_data = json.loads(line)
+            if issue_data["id"] in [issue_id1, issue_id2]:
+                closed_issues.append(issue_data)
+
+    assert len(closed_issues) == 2
+    for issue_data in closed_issues:
+        assert issue_data["status"] == "closed"
+        assert issue_data["closed_at"] is not None
+
+
+def test_cli_close_batch_with_already_closed_issue(sample_project, tmp_trace_dir, monkeypatch):
+    """cli_close batch should handle already closed issues gracefully."""
+    from trc_main import get_db, get_issue
+
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create two issues
+    result1 = runner.invoke(app, ["create", "Issue 1", "--description", ""])
+    issue_id1 = extract_issue_id(result1.output)
+
+    result2 = runner.invoke(app, ["create", "Issue 2", "--description", ""])
+    issue_id2 = extract_issue_id(result2.output)
+
+    # Close first issue
+    runner.invoke(app, ["close", issue_id1])
+
+    # Try to close both (one already closed)
+    result = runner.invoke(app, ["close", issue_id1, issue_id2])
+
+    # Should succeed
+    assert result.exit_code == 0
+
+    # Verify both are closed
+    db = get_db()
+    issue1 = get_issue(db, issue_id1)
+    issue2 = get_issue(db, issue_id2)
+
+    assert issue1["status"] == "closed"
+    assert issue2["status"] == "closed"
+    db.close()
+
+
 def test_cli_update_changes_fields(sample_project, tmp_trace_dir, monkeypatch):
     """cli_update should modify issue fields."""
     from trc_main import get_db, get_issue
@@ -623,7 +772,8 @@ def test_cli_add_dependency_blocks_type(sample_project, tmp_trace_dir, monkeypat
     result = runner.invoke(app, ["add-dependency", blocked_id, blocker_id, "--type", "blocks"])
 
     assert result.exit_code == 0
-    assert "Added dependency" in result.output or "dependency" in result.output.lower()
+    # Check for clearer message format
+    assert "is blocked by" in result.output or "blocked by" in result.output.lower()
 
     # Verify dependency was created
     db = get_db()
@@ -1154,7 +1304,8 @@ def test_cli_create_with_project_flag(sample_project, tmp_trace_dir, tmp_path, m
     issue = get_issue(db, issue_id)
     assert issue is not None
     assert issue["title"] == "Issue for proj2"
-    assert issue["project_id"] == str(proj2_path.resolve())
+    # New behavior: project_id is URL, not path
+    assert issue["project_id"] == "github.com/test/proj2"
     assert issue["id"].startswith("proj2-")
     db.close()
 
@@ -1207,7 +1358,8 @@ def test_cli_create_with_project_flag_outside_git_repo(sample_project, tmp_trace
     issue = get_issue(db, issue_id)
     assert issue is not None
     assert issue["title"] == "Issue from nowhere"
-    assert issue["project_id"] == sample_project["path"]
+    # New behavior: project_id is URL from git remote
+    assert issue["project_id"] == "github.com/user/myapp"
     db.close()
 
 
@@ -1259,10 +1411,83 @@ def test_cli_create_with_project_flag_and_parent(sample_project, tmp_trace_dir, 
     db = get_db()
     issue = get_issue(db, child_id)
     assert issue is not None
-    assert issue["project_id"] == str(proj2_path.resolve())
+    # New behavior: project_id is URL, not path
+    assert issue["project_id"] == "github.com/test/proj2"
 
     deps = get_dependencies(db, child_id)
     parent_deps = [d for d in deps if d["type"] == "parent"]
     assert len(parent_deps) == 1
     assert parent_deps[0]["depends_on_id"] == parent_id
     db.close()
+
+
+def test_cli_list_project_filters_to_specific_project(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """cli_list --project <name> should filter to that specific project."""
+    runner = CliRunner()
+
+    # Create second project
+    proj2_path = tmp_path / "proj2"
+    proj2_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj2_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj2.git"],
+        cwd=proj2_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Init and create issue in proj1 (myapp)
+    monkeypatch.chdir(sample_project["path"])
+    runner.invoke(app, ["init"])
+    runner.invoke(app, ["create", "Myapp issue", "--description", ""])
+
+    # Init and create issue in proj2
+    monkeypatch.chdir(proj2_path)
+    runner.invoke(app, ["init"])
+    runner.invoke(app, ["create", "Proj2 issue", "--description", ""])
+
+    # From myapp directory, list proj2 issues using --project
+    monkeypatch.chdir(sample_project["path"])
+    result = runner.invoke(app, ["list", "--project", "proj2"])
+
+    assert result.exit_code == 0
+    # Should show proj2 issue
+    assert "Proj2 issue" in result.output
+    # Should NOT show myapp issue
+    assert "Myapp issue" not in result.output
+
+
+def test_cli_ready_project_filters_to_specific_project(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """cli_ready --project <name> should filter to that specific project."""
+    runner = CliRunner()
+
+    # Create second project
+    proj2_path = tmp_path / "proj2"
+    proj2_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj2_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj2.git"],
+        cwd=proj2_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Init and create issue in proj1 (myapp)
+    monkeypatch.chdir(sample_project["path"])
+    runner.invoke(app, ["init"])
+    runner.invoke(app, ["create", "Myapp ready work", "--description", ""])
+
+    # Init and create issue in proj2
+    monkeypatch.chdir(proj2_path)
+    runner.invoke(app, ["init"])
+    runner.invoke(app, ["create", "Proj2 ready work", "--description", ""])
+
+    # From myapp directory, check ready work for proj2 using --project
+    monkeypatch.chdir(sample_project["path"])
+    result = runner.invoke(app, ["ready", "--project", "proj2"])
+
+    assert result.exit_code == 0
+    # Should show proj2 ready work
+    assert "Proj2 ready work" in result.output
+    # Should NOT show myapp ready work
+    assert "Myapp ready work" not in result.output
