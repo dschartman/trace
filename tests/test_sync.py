@@ -110,7 +110,10 @@ def test_export_to_jsonl_only_exports_project_issues(db_connection, tmp_path):
     issues = [json.loads(line) for line in lines]
 
     assert len(issues) == 1
-    assert issues[0]["project_id"] == "/path/to/myapp"
+    # project_id no longer in JSONL (removed for portability)
+    assert "project_id" not in issues[0]
+    # Verify it's the right issue by checking title
+    assert issues[0]["title"] == "App issue"
 
 
 def test_export_to_jsonl_handles_empty_project(db_connection, tmp_path):
@@ -149,7 +152,8 @@ def test_import_from_jsonl_creates_issues(db_connection, tmp_path):
         '{"id":"myapp-def456","project_id":"/path/to/myapp","title":"Test 2","description":"Desc","status":"closed","priority":1,"created_at":"2025-01-15T11:00:00Z","updated_at":"2025-01-15T12:00:00Z","closed_at":"2025-01-15T12:00:00Z","dependencies":[]}\n'
     )
 
-    stats = import_from_jsonl(db_connection, str(jsonl_path))
+    # New signature requires project_id parameter
+    stats = import_from_jsonl(db_connection, str(jsonl_path), project_id="/path/to/myapp")
 
     assert stats["created"] == 2
     assert stats["updated"] == 0
@@ -180,7 +184,7 @@ def test_import_from_jsonl_updates_existing_issues(db_connection, tmp_path):
         f'{{"id":"{issue_id}","project_id":"/path/to/myapp","title":"New title","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[]}}\n'
     )
 
-    stats = import_from_jsonl(db_connection, str(jsonl_path))
+    stats = import_from_jsonl(db_connection, str(jsonl_path), project_id="/path/to/myapp")
 
     assert stats["created"] == 0
     assert stats["updated"] == 1
@@ -199,7 +203,7 @@ def test_import_from_jsonl_creates_dependencies(db_connection, tmp_path):
         '{"id":"myapp-child","project_id":"/path/to/myapp","title":"Child","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[{"depends_on_id":"myapp-parent","type":"parent"}]}\n'
     )
 
-    import_from_jsonl(db_connection, str(jsonl_path))
+    import_from_jsonl(db_connection, str(jsonl_path), project_id="/path/to/myapp")
 
     deps = get_dependencies(db_connection, "myapp-child")
 
@@ -219,7 +223,7 @@ def test_import_from_jsonl_skips_invalid_lines(db_connection, tmp_path):
         '{"id":"myapp-def456","project_id":"/path/to/myapp","title":"Valid 2","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","dependencies":[]}\n'
     )
 
-    stats = import_from_jsonl(db_connection, str(jsonl_path))
+    stats = import_from_jsonl(db_connection, str(jsonl_path), project_id="/path/to/myapp")
 
     # Should import 2 valid lines, skip 1 invalid
     assert stats["created"] == 2
@@ -236,7 +240,7 @@ def test_import_from_jsonl_handles_empty_file(db_connection, tmp_path):
     jsonl_path = tmp_path / "issues.jsonl"
     jsonl_path.write_text("")
 
-    stats = import_from_jsonl(db_connection, str(jsonl_path))
+    stats = import_from_jsonl(db_connection, str(jsonl_path), project_id="/path/to/myapp")
 
     assert stats["created"] == 0
     assert stats["updated"] == 0
@@ -269,7 +273,7 @@ def test_export_import_roundtrip(db_connection, tmp_path):
     db_connection.commit()
 
     # Import
-    import_from_jsonl(db_connection, str(jsonl_path))
+    import_from_jsonl(db_connection, str(jsonl_path), project_id="/path/to/myapp")
 
     # Verify
     parent_restored = get_issue(db_connection, parent["id"])
@@ -326,8 +330,18 @@ def test_set_last_sync_time_updates_existing(db_connection):
 
 def test_sync_project_imports_when_jsonl_newer(db_connection, tmp_path):
     """Should import JSONL when file is newer than last sync."""
-    from trc_main import sync_project, get_issue, set_last_sync_time
+    from trc_main import sync_project, get_issue, set_last_sync_time, detect_project
     import time
+
+    # Create git repo (required for sync_project)
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    config = git_dir / "config"
+    config.write_text("[core]\n\trepositoryformatversion = 0\n")
+
+    # Detect project to get proper project_id
+    project = detect_project(cwd=str(tmp_path))
+    project_id = project["id"]
 
     # Create JSONL file
     trace_dir = tmp_path / ".trace"
@@ -338,7 +352,7 @@ def test_sync_project_imports_when_jsonl_newer(db_connection, tmp_path):
     )
 
     # Set old sync time
-    set_last_sync_time(db_connection, str(tmp_path), time.time() - 100)
+    set_last_sync_time(db_connection, project_id, time.time() - 100)
 
     # Sync should import
     sync_project(db_connection, str(tmp_path))
@@ -390,8 +404,18 @@ def test_sync_project_handles_missing_jsonl(db_connection, tmp_path):
 
 def test_sync_project_updates_last_sync_time(db_connection, tmp_path):
     """Should update last sync timestamp after import."""
-    from trc_main import sync_project, get_last_sync_time
+    from trc_main import sync_project, get_last_sync_time, detect_project
     import time
+
+    # Create git repo (required for sync_project)
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    config = git_dir / "config"
+    config.write_text("[core]\n\trepositoryformatversion = 0\n")
+
+    # Detect project to get proper project_id
+    project = detect_project(cwd=str(tmp_path))
+    project_id = project["id"]
 
     # Create JSONL file
     trace_dir = tmp_path / ".trace"
@@ -407,5 +431,5 @@ def test_sync_project_updates_last_sync_time(db_connection, tmp_path):
     sync_project(db_connection, str(tmp_path))
 
     # Verify last sync time was set
-    last_sync = get_last_sync_time(db_connection, str(tmp_path))
+    last_sync = get_last_sync_time(db_connection, project_id)
     assert last_sync == jsonl_mtime

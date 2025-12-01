@@ -205,18 +205,21 @@ def detect_project(cwd: Optional[str] = None) -> Optional[Dict[str, str]]:
     """Detect project from git repository.
 
     Walks up directory tree from current working directory to find .git,
-    then extracts project name from git remote or directory name.
+    then extracts project name and ID from git remote or directory name.
 
     Args:
         cwd: Optional current working directory (defaults to os.getcwd())
 
     Returns:
-        Dict with 'name' and 'path' keys, or None if not in a git repo
+        Dict with 'id', 'name', and 'path' keys, or None if not in a git repo
+        - id: Git remote URL (e.g., 'github.com/user/repo') or absolute path for local-only repos
+        - name: Project name (extracted from remote or directory name)
+        - path: Absolute path to project directory
 
     Example:
         >>> project = detect_project()
         >>> if project:
-        ...     print(f"{project['name']} at {project['path']}")
+        ...     print(f"{project['name']} (id: {project['id']}) at {project['path']}")
     """
     if cwd is None:
         cwd = os.getcwd()
@@ -232,20 +235,148 @@ def detect_project(cwd: Optional[str] = None) -> Optional[Dict[str, str]]:
             # Found a git repository
             project_path = str(parent.absolute())
 
-            # Try to extract name from git remote
+            # Try to extract project_id and name from git remote
+            project_id = _extract_project_id_from_git_remote(git_dir)
             project_name = _extract_name_from_git_remote(git_dir)
 
-            # Fall back to directory name if no remote found
+            # Fall back to absolute path and directory name if no remote found
+            if not project_id:
+                project_id = project_path
+
             if not project_name:
                 project_name = parent.name
 
             # Sanitize the project name
             project_name = sanitize_project_name(project_name)
 
-            return {"name": project_name, "path": project_path}
+            return {"id": project_id, "name": project_name, "path": project_path}
 
     # Not in a git repository
     return None
+
+
+def is_project_initialized(project_path: str) -> bool:
+    """Check if a project has been initialized with trc init.
+
+    Args:
+        project_path: Absolute path to project directory
+
+    Returns:
+        True if .trace/issues.jsonl exists, False otherwise
+    """
+    trace_dir = Path(project_path) / ".trace"
+    jsonl_path = trace_dir / "issues.jsonl"
+    return jsonl_path.exists()
+
+
+def resolve_project(project_flag: str, db: sqlite3.Connection) -> Optional[Dict[str, str]]:
+    """Resolve project by name or path.
+
+    Accepts either a project name (e.g., 'myapp') or a path (e.g., '~/Repos/myapp',
+    '/absolute/path', or './relative/path').
+
+    Args:
+        project_flag: Project identifier (name or path)
+        db: Database connection
+
+    Returns:
+        Dict with 'id', 'name', and 'path' keys, or None if not found
+    """
+    # Check if the input looks like a path (contains / or starts with ~)
+    if "/" in project_flag or project_flag.startswith("~"):
+        # Treat as path - expand and resolve it
+        expanded_path = str(Path(project_flag).expanduser().resolve())
+
+        # Look up by path in database (id column contains the absolute path for local repos)
+        cursor = db.execute(
+            "SELECT id, name, current_path FROM projects WHERE current_path = ?",
+            (expanded_path,)
+        )
+        row = cursor.fetchone()
+
+        if row is not None:
+            return {"id": row[0], "name": row[1], "path": row[2]}
+
+        # If not found by current_path, try looking up by id (for cases where id is the path)
+        cursor = db.execute(
+            "SELECT id, name, current_path FROM projects WHERE id = ?",
+            (expanded_path,)
+        )
+        row = cursor.fetchone()
+
+        if row is not None:
+            return {"id": row[0], "name": row[1], "path": row[2]}
+
+        return None
+    else:
+        # Treat as project name
+        cursor = db.execute(
+            "SELECT id, name, current_path FROM projects WHERE name = ?",
+            (project_flag,)
+        )
+        row = cursor.fetchone()
+
+        if row is not None:
+            return {"id": row[0], "name": row[1], "path": row[2]}
+
+        return None
+
+
+def _extract_project_id_from_git_remote(git_dir: Path) -> Optional[str]:
+    """Extract project ID from git remote URL.
+
+    Parses .git/config to find remote "origin" URL and converts it to
+    a portable project identifier.
+
+    Args:
+        git_dir: Path to .git directory
+
+    Returns:
+        Project ID from remote URL, or None if not found
+
+    Handles various git URL formats:
+        - https://github.com/user/repo.git → github.com/user/repo
+        - git@github.com:user/repo.git → github.com/user/repo
+        - https://gitlab.com/group/subgroup/project.git → gitlab.com/group/subgroup/project
+    """
+    config_file = git_dir / "config"
+
+    if not config_file.exists():
+        return None
+
+    try:
+        config_content = config_file.read_text()
+
+        # Look for remote "origin" url
+        # Match pattern: url = <URL>
+        match = re.search(r'url\s*=\s*(.+)', config_content)
+
+        if not match:
+            return None
+
+        url = match.group(1).strip()
+
+        # Remove .git suffix if present
+        url = url.rstrip("/")
+        if url.endswith(".git"):
+            url = url[:-4]
+
+        # Convert various URL formats to canonical form: host/path
+        if url.startswith("https://") or url.startswith("http://"):
+            # https://github.com/user/repo → github.com/user/repo
+            url = url.replace("https://", "").replace("http://", "")
+        elif url.startswith("git@"):
+            # git@github.com:user/repo → github.com/user/repo
+            url = url.replace("git@", "").replace(":", "/", 1)
+        else:
+            # Unknown format
+            return None
+
+        return url if url else None
+
+    except Exception:
+        # If anything goes wrong reading/parsing config, return None
+        return None
 
 
 def _extract_name_from_git_remote(git_dir: Path) -> Optional[str]:
@@ -350,11 +481,11 @@ def init_database(db_path: str) -> sqlite3.Connection:
             CHECK (status IN ('open', 'in_progress', 'closed', 'blocked'))
         );
 
-        -- Projects: Registry of all tracked projects
+        -- Projects: Registry of all tracked projects (NEW SCHEMA)
         CREATE TABLE IF NOT EXISTS projects (
-            name TEXT PRIMARY KEY,
-            path TEXT NOT NULL UNIQUE,
-            git_remote TEXT
+            id TEXT PRIMARY KEY,           -- Remote URL (e.g., github.com/user/repo) or absolute path
+            name TEXT NOT NULL,            -- Project name
+            current_path TEXT NOT NULL     -- Absolute path to current location
         );
 
         -- Dependencies: Relationships between issues
@@ -388,10 +519,59 @@ def init_database(db_path: str) -> sqlite3.Connection:
     # Set initial metadata if not exists
     cursor = conn.execute("SELECT COUNT(*) FROM metadata WHERE key = 'schema_version'")
     if cursor.fetchone()[0] == 0:
-        conn.execute("INSERT INTO metadata (key, value) VALUES ('schema_version', '1')")
+        conn.execute("INSERT INTO metadata (key, value) VALUES ('schema_version', '2')")
         conn.commit()
+    else:
+        # Check if migration is needed
+        cursor = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version'")
+        version = int(cursor.fetchone()[0])
+
+        if version == 1:
+            # Migrate from schema version 1 to 2
+            _migrate_schema_v1_to_v2(conn)
 
     return conn
+
+
+def _migrate_schema_v1_to_v2(conn: sqlite3.Connection) -> None:
+    """Migrate database schema from version 1 to version 2.
+
+    Changes:
+    - Projects table: (name PK, path UNIQUE, git_remote) → (id PK, name, current_path)
+    - project_id in issues: stays as-is (will be migrated when projects are synced)
+
+    Args:
+        conn: Database connection
+    """
+    # Check if migration needed (detect old schema by checking for 'path' column)
+    cursor = conn.execute("PRAGMA table_info(projects)")
+    columns = {row[1] for row in cursor.fetchall()}
+
+    if "path" in columns and "id" not in columns:
+        # Old schema detected, run migration
+        conn.executescript("""
+            -- Rename old table
+            ALTER TABLE projects RENAME TO projects_old;
+
+            -- Create new table with new schema
+            CREATE TABLE projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                current_path TEXT NOT NULL
+            );
+
+            -- Migrate data: use path as id for local-only projects
+            -- (When we sync with git repos, these will be updated to use remote URLs)
+            INSERT INTO projects (id, name, current_path)
+            SELECT path, name, path FROM projects_old;
+
+            -- Drop old table
+            DROP TABLE projects_old;
+        """)
+
+        # Update schema version
+        conn.execute("UPDATE metadata SET value = '2' WHERE key = 'schema_version'")
+        conn.commit()
 
 
 def get_lock_path() -> Path:
@@ -443,7 +623,65 @@ def sync_project(db: sqlite3.Connection, project_path: str) -> None:
         - Checks JSONL modification time vs last sync timestamp
         - Imports only if JSONL is newer (e.g., after git pull)
         - Updates last sync timestamp after import
+        - Detects project_id from git context for portable imports
     """
+    # Detect project ID from git context
+    project = detect_project(cwd=project_path)
+    if not project:
+        # Not a git repo, skip sync
+        return
+
+    project_id = project["id"]
+
+    # AUTO-MERGE: Check if project_id changed (e.g., local path → URL)
+    # Find issues with different project_id but for this same path
+    cursor = db.execute(
+        "SELECT DISTINCT project_id FROM issues"
+    )
+    all_project_ids = [row[0] for row in cursor.fetchall()]
+
+    for old_project_id in all_project_ids:
+        # Check if this is the same project with a different ID
+        # (e.g., old_project_id is absolute path, new is URL)
+        if old_project_id != project_id:
+            # Check if old_project_id points to this same path
+            is_same_project = False
+
+            # Case 1: old_project_id is the absolute path itself
+            if old_project_id == project_path:
+                is_same_project = True
+
+            # Case 2: old_project_id exists in projects table with this path
+            else:
+                cursor2 = db.execute(
+                    "SELECT current_path FROM projects WHERE id = ?",
+                    (old_project_id,)
+                )
+                row = cursor2.fetchone()
+                if row and row[0] == project_path:
+                    is_same_project = True
+
+            if is_same_project:
+                # Auto-merge: update all issues from old_project_id to new_project_id
+                db.execute(
+                    "UPDATE issues SET project_id = ? WHERE project_id = ?",
+                    (project_id, old_project_id)
+                )
+                db.commit()
+
+                # Update or remove old entry in projects table
+                db.execute(
+                    "DELETE FROM projects WHERE id = ?",
+                    (old_project_id,)
+                )
+                # Ensure new project_id is registered
+                db.execute(
+                    "INSERT OR REPLACE INTO projects (id, name, current_path) VALUES (?, ?, ?)",
+                    (project_id, project["name"], project_path)
+                )
+                db.commit()
+
+    # Now handle JSONL sync if file exists
     trace_dir = Path(project_path) / ".trace"
     jsonl_path = trace_dir / "issues.jsonl"
 
@@ -452,12 +690,12 @@ def sync_project(db: sqlite3.Connection, project_path: str) -> None:
 
     # Check if JSONL is newer than last sync
     jsonl_mtime = jsonl_path.stat().st_mtime
-    last_sync = get_last_sync_time(db, project_path)
+    last_sync = get_last_sync_time(db, project_id)
 
     if last_sync is None or jsonl_mtime > last_sync:
         # JSONL is newer, import it
-        import_from_jsonl(db, str(jsonl_path))
-        set_last_sync_time(db, project_path, jsonl_mtime)
+        import_from_jsonl(db, str(jsonl_path), project_id)
+        set_last_sync_time(db, project_id, jsonl_mtime)
 
 
 # Issue CRUD Operations
@@ -999,12 +1237,13 @@ def export_to_jsonl(
 
     Args:
         db: Database connection
-        project_id: Project ID (absolute path)
+        project_id: Project ID (URL or path)
         jsonl_path: Path to JSONL file to create
 
     Format:
         One JSON object per line, sorted by ID
         Includes dependencies inline
+        DOES NOT include project_id (project identity from git context)
     """
     # Get all issues for project, sorted by ID
     cursor = db.execute(
@@ -1026,8 +1265,9 @@ def export_to_jsonl(
                 {"depends_on_id": row[0], "type": row[1]} for row in deps_cursor.fetchall()
             ]
 
-            # Add dependencies to issue dict
+            # Prepare issue data (exclude project_id for portability)
             issue_data = dict(issue)
+            del issue_data["project_id"]  # Remove project_id for portability
             issue_data["dependencies"] = dependencies
 
             # Write as single JSON line
@@ -1037,12 +1277,14 @@ def export_to_jsonl(
 def import_from_jsonl(
     db: sqlite3.Connection,
     jsonl_path: str,
+    project_id: str,
 ) -> Dict[str, int]:
     """Import issues from JSONL file.
 
     Args:
         db: Database connection
         jsonl_path: Path to JSONL file to import
+        project_id: Project ID to assign to imported issues (from git context)
 
     Returns:
         Dict with stats: created, updated, errors
@@ -1052,6 +1294,7 @@ def import_from_jsonl(
         - Updates issues that already exist
         - Skips malformed lines and continues
         - Creates dependencies after all issues imported
+        - Ignores project_id from JSONL if present (uses parameter instead)
     """
     stats = {"created": 0, "updated": 0, "errors": 0}
     path = Path(jsonl_path)
@@ -1085,13 +1328,14 @@ def import_from_jsonl(
 
             if existing is None:
                 # Create new issue
+                # Use project_id parameter, not from JSONL (for portability)
                 db.execute(
                     """INSERT INTO issues
                        (id, project_id, title, description, status, priority, created_at, updated_at, closed_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         issue_data["id"],
-                        issue_data["project_id"],
+                        project_id,  # Use parameter, not issue_data["project_id"]
                         issue_data["title"],
                         issue_data.get("description", ""),
                         issue_data.get("status", "open"),
@@ -1182,6 +1426,35 @@ def get_db() -> sqlite3.Connection:
     return init_database(str(db_path))
 
 
+def get_project_path(db: sqlite3.Connection, project_id: str) -> Optional[str]:
+    """Get filesystem path for a project_id.
+
+    Args:
+        db: Database connection
+        project_id: Project ID (URL or path)
+
+    Returns:
+        Filesystem path, or None if not found
+
+    Notes:
+        - Looks up current_path from projects table
+        - Falls back to project_id if it looks like a path (backward compat)
+    """
+    cursor = db.execute(
+        "SELECT current_path FROM projects WHERE id = ?",
+        (project_id,)
+    )
+    row = cursor.fetchone()
+    if row:
+        return row[0]
+
+    # Fallback: if project_id looks like an absolute path, use it
+    if os.path.isabs(project_id) and Path(project_id).exists():
+        return project_id
+
+    return None
+
+
 @app.command()
 def init():
     """Initialize trace in current directory."""
@@ -1201,16 +1474,17 @@ def init():
     if not jsonl_path.exists():
         jsonl_path.write_text("")
 
-    # Register project in central database
+    # Register project in central database (new schema: id, name, current_path)
     db = get_db()
     db.execute(
-        "INSERT OR IGNORE INTO projects (name, path) VALUES (?, ?)",
-        (project["name"], project["path"]),
+        "INSERT OR REPLACE INTO projects (id, name, current_path) VALUES (?, ?, ?)",
+        (project["id"], project["name"], project["path"]),
     )
     db.commit()
     db.close()
 
     print(f"Initialized trace for project: {project['name']}")
+    print(f"Project ID: {project['id']}")
     print(f"Path: {project['path']}")
     print(f"JSONL: {jsonl_path}")
 
@@ -1223,26 +1497,21 @@ def create(
     status: Annotated[str, typer.Option(help="Initial status")] = "open",
     parent: Annotated[Optional[str], typer.Option(help="Parent issue ID")] = None,
     depends_on: Annotated[Optional[str], typer.Option(help="Blocking dependency ID")] = None,
-    project_flag: Annotated[Optional[str], typer.Option("--project", help="Target project name")] = None,
+    project_flag: Annotated[Optional[str], typer.Option("--project", help="Target project (name or path)")] = None,
 ):
     """Create a new issue."""
     # Resolve target project
     if project_flag:
-        # Look up in registry
+        # Look up in registry by name or path
         db = get_db()
-        cursor = db.execute(
-            "SELECT path, name FROM projects WHERE name = ?",
-            (project_flag,)
-        )
-        row = cursor.fetchone()
+        project = resolve_project(project_flag, db)
 
-        if row is None:
+        if project is None:
             print(f"Error: Project '{project_flag}' not found in registry")
             print("Hint: Run 'trc init' in the target project first")
             db.close()
             raise typer.Exit(code=1)
 
-        project = {"path": row[0], "name": row[1]}
         db.close()
     else:
         # Use current directory detection
@@ -1253,6 +1522,12 @@ def create(
             print("Run 'trc init' first or use --project <name>")
             raise typer.Exit(code=1)
 
+    # Check if project is initialized (TRANSACTION SAFETY)
+    if not is_project_initialized(project["path"]):
+        print("Error: Project not initialized")
+        print(f"Run 'trc init' in {project['path']} first")
+        raise typer.Exit(code=1)
+
     lock_path = get_lock_path()
 
     with file_lock(lock_path):
@@ -1261,10 +1536,10 @@ def create(
         # Sync before operation
         sync_project(db, project["path"])
 
-        # Create issue
+        # Create issue (use project["id"] for database)
         issue = create_issue(
             db,
-            project["path"],
+            project["id"],  # Use project_id (URL or path)
             project["name"],
             title,
             description=description,
@@ -1285,11 +1560,11 @@ def create(
         if depends_on:
             add_dependency(db, issue["id"], depends_on, "blocks")
 
-        # Export to JSONL
+        # Export to JSONL (use project["id"] for database, project["path"] for filesystem)
         trace_dir = Path(project["path"]) / ".trace"
         jsonl_path = trace_dir / "issues.jsonl"
-        export_to_jsonl(db, project["path"], str(jsonl_path))
-        set_last_sync_time(db, project["path"], time.time())
+        export_to_jsonl(db, project["id"], str(jsonl_path))
+        set_last_sync_time(db, project["id"], time.time())
 
         print(f"Created {issue['id']}: {title}")
         if parent:
@@ -1302,7 +1577,7 @@ def create(
 
 @app.command(name="list")
 def list_cmd(
-    project: Annotated[Optional[str], typer.Option(help="Filter by project (use 'any' for all projects)")] = None,
+    project: Annotated[Optional[str], typer.Option(help="Filter by project - name or path (use 'any' for all projects)")] = None,
     status: Annotated[Optional[list[str]], typer.Option(help="Filter by status (can specify multiple times, use 'any' for all statuses)")] = None,
 ):
     """List issues."""
@@ -1326,8 +1601,19 @@ def list_cmd(
         if project == "any":
             # List all issues across all projects
             issues = list_issues(db, status=status_filter)
+        elif project is not None:
+            # Look up specific project by name or path
+            target_project = resolve_project(project, db)
+            if target_project is None:
+                print(f"Error: Project '{project}' not found in registry")
+                print("Hint: Run 'trc list --project any' to see all projects")
+                db.close()
+                raise typer.Exit(code=1)
+
+            sync_project(db, target_project["path"])
+            issues = list_issues(db, project_id=target_project["id"], status=status_filter)
         else:
-            # List issues for current project
+            # No --project flag, use current directory
             current_project = detect_project()
             if current_project is None:
                 print("Error: Not in a git repository. Use --project any to list all issues.")
@@ -1337,7 +1623,8 @@ def list_cmd(
             # Sync before operation
             sync_project(db, current_project["path"])
 
-            issues = list_issues(db, project_id=current_project["path"], status=status_filter)
+            # Use project["id"] for database query
+            issues = list_issues(db, project_id=current_project["id"], status=status_filter)
 
         if not issues:
             print("No issues found")
@@ -1422,57 +1709,88 @@ def show(issue_id: Annotated[str, typer.Argument(help="Issue ID")]):
 
 
 @app.command()
-def close(issue_id: Annotated[str, typer.Argument(help="Issue ID")]):
-    """Close an issue."""
+def close(issue_ids: Annotated[list[str], typer.Argument(help="Issue ID(s) to close")]):
+    """Close one or more issues."""
     lock_path = get_lock_path()
 
     with file_lock(lock_path):
         db = get_db()
 
-        issue = get_issue(db, issue_id)
-        if issue is None:
-            print(f"Error: Issue {issue_id} not found")
-            db.close()
-            raise typer.Exit(code=1)
+        # Track which projects need JSONL export
+        projects_to_export: Set[str] = set()
+        closed_issues = []
+        errors = []
 
-        # Sync before operation
-        sync_project(db, issue["project_id"])
+        for issue_id in issue_ids:
+            issue = get_issue(db, issue_id)
+            if issue is None:
+                errors.append(f"Warning: Issue {issue_id} not found")
+                continue
 
-        # Re-fetch after sync
-        issue = get_issue(db, issue_id)
-        if issue is None:
-            print(f"Error: Issue {issue_id} not found")
-            db.close()
-            raise typer.Exit(code=1)
+            # Get project path for filesystem operations
+            project_id = issue["project_id"]
+            project_path = get_project_path(db, project_id)
+            if not project_path:
+                errors.append(f"Warning: Cannot find project path for {project_id}")
+                continue
 
-        # Check for open children
-        if has_open_children(db, issue_id):
-            children = get_children(db, issue_id)
-            open_children = [c for c in children if c["status"] != "closed"]
-            print("Error: Cannot close issue with open children:")
-            for child in open_children:
-                print(f"  - {child['id']}: {child['title']} [{child['status']}]")
-            db.close()
-            raise typer.Exit(code=1)
+            # Check if project is initialized (TRANSACTION SAFETY)
+            if not is_project_initialized(project_path):
+                errors.append(f"Warning: Project not initialized for {issue_id}: {project_path}")
+                continue
 
-        # Close the issue
-        close_issue(db, issue_id)
+            # Sync before operation (once per project)
+            if project_id not in projects_to_export:
+                sync_project(db, project_path)
 
-        # Export to JSONL
-        project_path = issue["project_id"]
-        trace_dir = Path(project_path) / ".trace"
-        jsonl_path = trace_dir / "issues.jsonl"
-        export_to_jsonl(db, project_path, str(jsonl_path))
-        set_last_sync_time(db, project_path, time.time())
+            # Re-fetch after sync
+            issue = get_issue(db, issue_id)
+            if issue is None:
+                errors.append(f"Warning: Issue {issue_id} not found after sync")
+                continue
 
-        print(f"Closed {issue_id}: {issue['title']}")
+            # Check for open children
+            if has_open_children(db, issue_id):
+                children = get_children(db, issue_id)
+                open_children = [c for c in children if c["status"] != "closed"]
+                error_msg = f"Warning: Cannot close {issue_id} with open children:"
+                for child in open_children:
+                    error_msg += f"\n  - {child['id']}: {child['title']} [{child['status']}]"
+                errors.append(error_msg)
+                continue
+
+            # Close the issue
+            close_issue(db, issue_id)
+            closed_issues.append((issue_id, issue['title']))
+            projects_to_export.add(project_id)
+
+        # Export to JSONL for all affected projects
+        for project_id in projects_to_export:
+            project_path = get_project_path(db, project_id)
+            if project_path:
+                trace_dir = Path(project_path) / ".trace"
+                jsonl_path = trace_dir / "issues.jsonl"
+                export_to_jsonl(db, project_id, str(jsonl_path))
+                set_last_sync_time(db, project_id, time.time())
 
         db.close()
+
+        # Print errors first
+        for error in errors:
+            print(error)
+
+        # Print successfully closed issues
+        for issue_id, title in closed_issues:
+            print(f"Closed {issue_id}: {title}")
+
+        # Exit with error if nothing was closed
+        if not closed_issues and errors:
+            raise typer.Exit(code=1)
 
 
 @app.command()
 def ready(
-    project: Annotated[Optional[str], typer.Option(help="Filter by project (use 'any' for all projects)")] = None,
+    project: Annotated[Optional[str], typer.Option(help="Filter by project - name or path (use 'any' for all projects)")] = None,
     status: Annotated[Optional[str], typer.Option(help="Filter by status (defaults to 'open', use 'any' for all)")] = None,
 ):
     """Show ready work (not blocked)."""
@@ -1492,7 +1810,19 @@ def ready(
         if project == "any":
             # Get all issues across all projects
             issues = list_issues(db, status=status_filter)
+        elif project is not None:
+            # Look up specific project by name or path
+            target_project = resolve_project(project, db)
+            if target_project is None:
+                print(f"Error: Project '{project}' not found in registry")
+                print("Hint: Run 'trc ready --project any' to see all ready work")
+                db.close()
+                raise typer.Exit(code=1)
+
+            sync_project(db, target_project["path"])
+            issues = list_issues(db, project_id=target_project["id"], status=status_filter)
         else:
+            # No --project flag, use current directory
             current_project = detect_project()
             if current_project is None:
                 print("Error: Not in a git repository. Use --project any to see all ready work.")
@@ -1502,7 +1832,8 @@ def ready(
             # Sync before operation
             sync_project(db, current_project["path"])
 
-            issues = list_issues(db, project_id=current_project["path"], status=status_filter)
+            # Use project["id"] for database query
+            issues = list_issues(db, project_id=current_project["id"], status=status_filter)
 
         if not issues:
             print("No open issues found")
@@ -1555,8 +1886,10 @@ def tree(
             db.close()
             raise typer.Exit(code=1)
 
-        # Sync before operation
-        sync_project(db, issue["project_id"])
+        # Get project path and sync
+        project_path = get_project_path(db, issue["project_id"])
+        if project_path:
+            sync_project(db, project_path)
 
         # Re-fetch after sync
         issue = get_issue(db, issue_id)
@@ -1628,8 +1961,17 @@ def update(
             db.close()
             raise typer.Exit(code=1)
 
-        # Sync before operation
-        sync_project(db, issue["project_id"])
+        # Get project path and sync
+        project_path = get_project_path(db, issue["project_id"])
+        if project_path:
+            # Check if project is initialized (TRANSACTION SAFETY)
+            if not is_project_initialized(project_path):
+                print("Error: Project not initialized")
+                print(f"Run 'trc init' in {project_path} first")
+                db.close()
+                raise typer.Exit(code=1)
+
+            sync_project(db, project_path)
 
         # Re-fetch after sync
         issue = get_issue(db, issue_id)
@@ -1647,11 +1989,17 @@ def update(
             raise typer.Exit(code=1)
 
         # Export to JSONL
-        project_path = issue["project_id"]
+        project_id = issue["project_id"]
+        project_path = get_project_path(db, project_id)
+        if not project_path:
+            print(f"Error: Cannot find project path for {project_id}")
+            db.close()
+            raise typer.Exit(code=1)
+
         trace_dir = Path(project_path) / ".trace"
         jsonl_path = trace_dir / "issues.jsonl"
-        export_to_jsonl(db, project_path, str(jsonl_path))
-        set_last_sync_time(db, project_path, time.time())
+        export_to_jsonl(db, project_id, str(jsonl_path))
+        set_last_sync_time(db, project_id, time.time())
 
         updated = get_issue(db, issue_id)
         if updated:
@@ -1688,8 +2036,22 @@ def reparent(
             db.close()
             raise typer.Exit(code=1)
 
-        # Sync before operation
-        sync_project(db, issue["project_id"])
+        # Get project path and sync
+        project_id = issue["project_id"]
+        project_path = get_project_path(db, project_id)
+        if not project_path:
+            print(f"Error: Cannot find project path for {project_id}")
+            db.close()
+            raise typer.Exit(code=1)
+
+        # Check if project is initialized (TRANSACTION SAFETY)
+        if not is_project_initialized(project_path):
+            print("Error: Project not initialized")
+            print(f"Run 'trc init' in {project_path} first")
+            db.close()
+            raise typer.Exit(code=1)
+
+        sync_project(db, project_path)
 
         # Re-fetch after sync
         issue = get_issue(db, issue_id)
@@ -1715,11 +2077,10 @@ def reparent(
             raise typer.Exit(code=1)
 
         # Export to JSONL for the issue's project
-        project_path = issue["project_id"]
         trace_dir = Path(project_path) / ".trace"
         jsonl_path = trace_dir / "issues.jsonl"
-        export_to_jsonl(db, project_path, str(jsonl_path))
-        set_last_sync_time(db, project_path, time.time())
+        export_to_jsonl(db, project_id, str(jsonl_path))
+        set_last_sync_time(db, project_id, time.time())
 
         # Print confirmation
         if parent_id is None:
@@ -1755,10 +2116,36 @@ def add_dependency_cmd(
             db.close()
             raise typer.Exit(code=1)
 
+        # Get project paths for sync
+        issue_project_id = issue["project_id"]
+        issue_project_path = get_project_path(db, issue_project_id)
+        if not issue_project_path:
+            print(f"Error: Cannot find project path for {issue_project_id}")
+            db.close()
+            raise typer.Exit(code=1)
+
+        # Check if issue project is initialized (TRANSACTION SAFETY)
+        if not is_project_initialized(issue_project_path):
+            print("Error: Project not initialized")
+            print(f"Run 'trc init' in {issue_project_path} first")
+            db.close()
+            raise typer.Exit(code=1)
+
+        depends_project_id = depends_on["project_id"]
+        depends_project_path = get_project_path(db, depends_project_id)
+
+        # Check if depends_on project is initialized (if different project)
+        if depends_project_id != issue_project_id and depends_project_path:
+            if not is_project_initialized(depends_project_path):
+                print("Error: Dependency project not initialized")
+                print(f"Run 'trc init' in {depends_project_path} first")
+                db.close()
+                raise typer.Exit(code=1)
+
         # Sync both projects before operation
-        sync_project(db, issue["project_id"])
-        if depends_on["project_id"] != issue["project_id"]:
-            sync_project(db, depends_on["project_id"])
+        sync_project(db, issue_project_path)
+        if depends_project_id != issue_project_id and depends_project_path:
+            sync_project(db, depends_project_path)
 
         # Re-fetch after sync
         issue = get_issue(db, issue_id)
@@ -1778,21 +2165,28 @@ def add_dependency_cmd(
             raise typer.Exit(code=1)
 
         # Export to JSONL for the issue's project
-        project_path = issue["project_id"]
-        trace_dir = Path(project_path) / ".trace"
+        trace_dir = Path(issue_project_path) / ".trace"
         jsonl_path = trace_dir / "issues.jsonl"
-        export_to_jsonl(db, project_path, str(jsonl_path))
-        set_last_sync_time(db, project_path, time.time())
+        export_to_jsonl(db, issue_project_id, str(jsonl_path))
+        set_last_sync_time(db, issue_project_id, time.time())
 
         # Also export for depends_on project if different
-        if depends_on["project_id"] != issue["project_id"]:
-            depends_project_path = depends_on["project_id"]
+        if depends_project_id != issue_project_id and depends_project_path:
             depends_trace_dir = Path(depends_project_path) / ".trace"
             depends_jsonl_path = depends_trace_dir / "issues.jsonl"
-            export_to_jsonl(db, depends_project_path, str(depends_jsonl_path))
-            set_last_sync_time(db, depends_project_path, time.time())
+            export_to_jsonl(db, depends_project_id, str(depends_jsonl_path))
+            set_last_sync_time(db, depends_project_id, time.time())
 
-        print(f"Added {dep_type} dependency: {issue_id} → {depends_on_id}")
+        # Print clear dependency message based on type
+        if dep_type == "blocks":
+            print(f"{issue_id} is blocked by {depends_on_id}")
+        elif dep_type == "parent":
+            print(f"Set {depends_on_id} as parent of {issue_id}")
+        elif dep_type == "related":
+            print(f"Linked {issue_id} ↔ {depends_on_id} (related)")
+        else:
+            # Fallback for unknown types
+            print(f"Added {dep_type} dependency: {issue_id} → {depends_on_id}")
 
         db.close()
 
@@ -1800,7 +2194,7 @@ def add_dependency_cmd(
 @app.command()
 def move(
     issue_id: Annotated[str, typer.Argument(help="Issue ID")],
-    target_project_name: Annotated[str, typer.Argument(help="Target project name")],
+    target_project_name: Annotated[str, typer.Argument(help="Target project (name or path)")],
 ):
     """Move issue to different project."""
     lock_path = get_lock_path()
@@ -1814,8 +2208,33 @@ def move(
             db.close()
             raise typer.Exit(code=1)
 
-        # Sync source project before operation
-        sync_project(db, issue["project_id"])
+        # Get source project info (new schema: id, name, current_path)
+        old_project_id = issue["project_id"]
+        cursor = db.execute(
+            "SELECT current_path FROM projects WHERE id = ?",
+            (old_project_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            old_project_path = row[0]
+            # Check if old project is initialized (TRANSACTION SAFETY)
+            if not is_project_initialized(old_project_path):
+                print("Error: Source project not initialized")
+                print(f"Run 'trc init' in {old_project_path} first")
+                db.close()
+                raise typer.Exit(code=1)
+            # Sync source project before operation
+            sync_project(db, old_project_path)
+        else:
+            # Project not in registry, assume project_id is a path (backward compat)
+            old_project_path = old_project_id
+            if Path(old_project_path).exists():
+                if not is_project_initialized(old_project_path):
+                    print("Error: Source project not initialized")
+                    print(f"Run 'trc init' in {old_project_path} first")
+                    db.close()
+                    raise typer.Exit(code=1)
+                sync_project(db, old_project_path)
 
         # Re-fetch after sync
         issue = get_issue(db, issue_id)
@@ -1824,27 +2243,28 @@ def move(
             db.close()
             raise typer.Exit(code=1)
 
-        # Get source project path
-        old_project_path = issue["project_id"]
+        # Look up target project by name or path
+        target_project = resolve_project(target_project_name, db)
 
-        # Try to detect target project by name from registry
-        cursor = db.execute(
-            "SELECT path, name FROM projects WHERE name = ?",
-            (target_project_name,),
-        )
-        row = cursor.fetchone()
-
-        if row is None:
+        if target_project is None:
             print(f"Error: Project '{target_project_name}' not found in registry")
             print("Hint: Run 'trc init' in the target project first")
             db.close()
             raise typer.Exit(code=1)
 
-        new_project_id = row[0]
-        new_project_name = row[1]
+        new_project_id = target_project["id"]
+        new_project_name = target_project["name"]
+        new_project_path = target_project["path"]
+
+        # Check if target project is initialized (TRANSACTION SAFETY)
+        if not is_project_initialized(new_project_path):
+            print("Error: Target project not initialized")
+            print(f"Run 'trc init' in {new_project_path} first")
+            db.close()
+            raise typer.Exit(code=1)
 
         # Sync target project before operation
-        sync_project(db, new_project_id)
+        sync_project(db, new_project_path)
 
         # Move issue
         try:
@@ -1857,18 +2277,18 @@ def move(
         # Export to JSONL for both projects
         old_trace_dir = Path(old_project_path) / ".trace"
         old_jsonl = old_trace_dir / "issues.jsonl"
-        export_to_jsonl(db, old_project_path, str(old_jsonl))
-        set_last_sync_time(db, old_project_path, time.time())
+        export_to_jsonl(db, old_project_id, str(old_jsonl))
+        set_last_sync_time(db, old_project_id, time.time())
 
-        new_trace_dir = Path(new_project_id) / ".trace"
+        new_trace_dir = Path(new_project_path) / ".trace"
         new_trace_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
         new_jsonl = new_trace_dir / "issues.jsonl"
         export_to_jsonl(db, new_project_id, str(new_jsonl))
         set_last_sync_time(db, new_project_id, time.time())
 
         print(f"Moved {issue_id} → {new_id}")
-        print(f"  From: {old_project_path}")
-        print(f"  To:   {new_project_id}")
+        print(f"  From: {old_project_id} ({old_project_path})")
+        print(f"  To:   {new_project_id} ({new_project_path})")
 
         db.close()
 
@@ -1887,85 +2307,58 @@ Add this to your project's CLAUDE.md file for AI agent integration:
 
 ## Using Trace for Work Tracking
 
-This project uses [Trace](https://github.com/dschartman/trace) (`trc` command)
-for issue tracking and work planning across sessions.
+This project uses [Trace](https://github.com/dschartman/trace) for persistent
+work tracking across AI sessions.
 
-**When to use trace:**
-- Breaking down features into sub-tasks
-- Tracking bugs or improvements discovered during exploration
-- Planning work that will span multiple sessions
-- Coordinating work with dependencies in other projects
-- Anything you'd use TodoWrite for that's non-trivial
+**When to use trace vs TodoWrite:**
 
-**Granularity Philosophy:**
-Start with whatever feels natural. Create a parent for "Add authentication",
-then children for "Research OAuth libraries", "Implement Google login", etc.
-If breakdown is too fine-grained, reparent issues. If too coarse, break them down.
+Use trace instead of TodoWrite for any non-trivial work. If it involves multiple
+files, could span sessions, or needs to persist - use trace.
 
-**Structure is fluid, not rigid** - reorganization is trivial, so let structure
-evolve naturally as understanding grows.
+- **TodoWrite**: Single-session trivial tasks only
+- **Trace**: Everything else (features, bugs, planning, multi-step work)
+- **When in doubt**: Use trace
 
-**Proactive Usage:**
-Use trace early and often without waiting for explicit requests. If you're
-planning work, use trace. If you discover issues, use trace. Think of it as
-your external memory for work across sessions.
+**Why this matters:** Trace persists across sessions and commits to git. TodoWrite
+is ephemeral. For a tool designed around persistent work tracking, using TodoWrite
+defeats the purpose.
 
-**CRITICAL: Prefer trace over TodoWrite**
+**Setup (required once per project):**
 
-TodoWrite's general instructions suggest using it for "complex multi-step tasks",
-but this project uses trace instead. This is an explicit override of TodoWrite's
-default guidance.
+```bash
+trc init  # Run this first in your git repo
+```
 
-**Use TodoWrite ONLY for:**
-- Trivial, single-session work (e.g., "fix typo", "add comment")
-- Tasks that will definitely complete in the current session
-- Simple coordination within a single conversation
+If you forget, you'll see: "Error: Project not initialized. Run 'trc init' first"
 
-**Use trace for:**
-- Anything involving multiple files, tests, or implementation steps
-- Any work that could span multiple sessions
-- Feature development, bug fixes, refactoring
-- Planning or breaking down complex work
-- Essentially: anything non-trivial
+**Core workflow:**
 
-**When in doubt, use trace.** It's better to track too much than too little.
+```bash
+# Create work
+trc create "title" --description "context"
+trc create "subtask" --description "details" --parent <id>
 
-**Key commands:**
-- `trc create "title" --description "context"` - Create work items (description required)
-  - Use `--description ""` to explicitly opt-out if no context needed
-  - Description preserves context across sessions for AI agents
-- `trc create "title" --description "context" --parent <id>` - Create with parent
-- `trc ready` - See what's ready to work on (not blocked)
-- `trc tree <id>` - View breakdown of a feature
-- `trc show <id>` - See full details including dependencies
-- `trc list` - List backlog in current project (open, in_progress, blocked - excludes closed)
-- `trc list --status any` - See all issues including closed
-- `trc list --status closed` - See only completed work
-- `trc close <id>` - Mark work as complete
-- `trc update <id>` - Update existing issue (supports --title, --description, --priority, --status)
-- `trc add-dependency <id> <depends-on-id>` - Add blocking dependency to existing issue
-- `trc add-dependency <id> <parent-id> --type parent` - Add parent to existing issue
-- `trc add-dependency <id> <related-id> --type related` - Link related issues
+# Discover work
+trc ready              # What's unblocked and ready to work on
+trc list               # Current backlog (excludes closed)
+trc show <id>          # Full details with dependencies
 
-**Why --description is mandatory:**
-AI agents work across multiple sessions and need context to understand work items
-when returning to them later. The description field preserves this context.
-Even brief descriptions ("see parent", "blocked on API") are valuable.
+# Complete work
+trc close <id> [...]   # Close one or more issues
+```
 
-**Cross-project:**
-- `trc create "title" --description "context" --project <name>` - Create issue in another project
-- `trc create "title" --description "context" --depends-on <other-project-id>` - Link dependencies at creation
-- `trc add-dependency <id> <other-project-id>` - Add cross-project dependency later
-- `trc ready --project any` - See ready work across all projects
-- `trc list --project any` - See backlog across all projects (excludes closed)
-- `trc list --project any --status any` - See all issues across all projects including closed
-- `trc list --status open --status closed` - Filter by multiple statuses (can specify --status multiple times)
-- `trc move <id> <project>` - Move work between projects
+**Essential details:**
+
+- `--description` is required (preserves context across sessions for AI agents)
+  - Use `--description ""` to explicitly skip if truly not needed
+- Structure is fluid: Break down or reorganize as understanding evolves
+- Use `--parent <id>` to create hierarchical breakdowns
+- Cross-project: Add `--project <name>` to work across repositories
+- Use `trc <command> --help` for full options
 
 ───────────────────────────────────────────────────────────────────────────────
 
-For more details on Trace philosophy and workflows:
-  https://github.com/dschartman/trace
+For more details: https://github.com/dschartman/trace
 """
     print(guide_text)
 
