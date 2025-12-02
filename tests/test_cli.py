@@ -205,6 +205,9 @@ def test_cli_close_batch_closes_multiple_issues(sample_project, tmp_trace_dir, m
     issue2 = get_issue(db, issue_id2)
     issue3 = get_issue(db, issue_id3)
 
+    assert issue1 is not None
+    assert issue2 is not None
+    assert issue3 is not None
     assert issue1["status"] == "closed"
     assert issue1["closed_at"] is not None
     assert issue2["status"] == "closed"
@@ -243,6 +246,8 @@ def test_cli_close_batch_with_nonexistent_id_continues(sample_project, tmp_trace
     issue1 = get_issue(db, issue_id1)
     issue2 = get_issue(db, issue_id2)
 
+    assert issue1 is not None
+    assert issue2 is not None
     assert issue1["status"] == "closed"
     assert issue2["status"] == "closed"
     db.close()
@@ -315,6 +320,8 @@ def test_cli_close_batch_with_already_closed_issue(sample_project, tmp_trace_dir
     issue1 = get_issue(db, issue_id1)
     issue2 = get_issue(db, issue_id2)
 
+    assert issue1 is not None
+    assert issue2 is not None
     assert issue1["status"] == "closed"
     assert issue2["status"] == "closed"
     db.close()
@@ -1491,3 +1498,398 @@ def test_cli_ready_project_filters_to_specific_project(sample_project, tmp_trace
     assert "Proj2 ready work" in result.output
     # Should NOT show myapp ready work
     assert "Myapp ready work" not in result.output
+
+
+def test_cli_show_cross_project_does_not_corrupt_projects_table(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """show command on cross-project issue should not corrupt projects table.
+
+    Bug trace-noekf7: When running 'trc show' on an issue from a different project,
+    the show command was passing issue["project_id"] (a URL like github.com/user/proj1)
+    directly to sync_project() instead of the filesystem path. This caused
+    detect_project() to walk up from CWD and find the wrong project's .git,
+    triggering auto-merge logic that corrupted the projects table.
+    """
+    from trc_main import get_db
+
+    runner = CliRunner()
+
+    # Create two separate projects with URL-based project IDs
+    proj1_path = tmp_path / "proj1"
+    proj1_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj1_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj1.git"],
+        cwd=proj1_path,
+        check=True,
+        capture_output=True,
+    )
+
+    proj2_path = tmp_path / "proj2"
+    proj2_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj2_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj2.git"],
+        cwd=proj2_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Init proj1 and create an issue
+    monkeypatch.chdir(proj1_path)
+    runner.invoke(app, ["init"])
+    result = runner.invoke(app, ["create", "Issue in proj1", "--description", "test"])
+    assert result.exit_code == 0
+    proj1_issue_id = extract_issue_id(result.output)
+
+    # Init proj2
+    monkeypatch.chdir(proj2_path)
+    runner.invoke(app, ["init"])
+
+    # Record the correct state of projects table before show
+    db = get_db()
+    cursor = db.execute("SELECT id, current_path FROM projects ORDER BY id")
+    projects_before = {row[0]: row[1] for row in cursor.fetchall()}
+    db.close()
+
+    # From proj2 directory, run show on proj1's issue
+    # BUG: This used to pass issue["project_id"] (github.com/test/proj1) to sync_project
+    # which expected a filesystem path, causing corruption
+    result = runner.invoke(app, ["show", proj1_issue_id])
+    assert result.exit_code == 0
+    assert "Issue in proj1" in result.output
+
+    # Verify projects table is NOT corrupted
+    db = get_db()
+    cursor = db.execute("SELECT id, current_path FROM projects ORDER BY id")
+    projects_after = {row[0]: row[1] for row in cursor.fetchall()}
+    db.close()
+
+    # The projects table should be unchanged
+    # Specifically: current_path should still be filesystem paths, not URLs
+    assert projects_before == projects_after, (
+        f"Projects table was corrupted!\n"
+        f"Before: {projects_before}\n"
+        f"After: {projects_after}"
+    )
+
+    # Extra check: all current_path values should be filesystem paths (not URLs)
+    for project_id, current_path in projects_after.items():
+        assert current_path.startswith("/"), (
+            f"current_path for {project_id} should be absolute path, got: {current_path}"
+        )
+
+
+def test_cli_update_cross_project_issue_works(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """update command should work on issues from other projects.
+
+    Bug trace-y47npx: When a trace is created in project A while working in project B
+    (using --project flag), subsequent trc update commands failed with
+    'Project not initialized' error.
+    """
+    runner = CliRunner()
+
+    # Create two separate projects
+    proj1_path = tmp_path / "proj1"
+    proj1_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj1_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj1.git"],
+        cwd=proj1_path,
+        check=True,
+        capture_output=True,
+    )
+
+    proj2_path = tmp_path / "proj2"
+    proj2_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj2_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj2.git"],
+        cwd=proj2_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Init proj1 and create an issue
+    monkeypatch.chdir(proj1_path)
+    runner.invoke(app, ["init"])
+    result = runner.invoke(app, ["create", "Issue in proj1", "--description", "test"])
+    assert result.exit_code == 0
+    proj1_issue_id = extract_issue_id(result.output)
+
+    # Init proj2
+    monkeypatch.chdir(proj2_path)
+    runner.invoke(app, ["init"])
+
+    # From proj2 directory, update the proj1 issue
+    # BUG: This used to fail with "Project not initialized"
+    result = runner.invoke(app, ["update", proj1_issue_id, "--status", "in_progress"])
+    assert result.exit_code == 0, f"update failed: {result.output}"
+    assert "in_progress" in result.output or "Updated" in result.output
+
+
+def test_cli_close_cross_project_issue_works(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """close command should work on issues from other projects.
+
+    Bug trace-y47npx: When a trace is created in project A while working in project B,
+    subsequent trc close commands failed with 'Project not initialized' error.
+    """
+    runner = CliRunner()
+
+    # Create two separate projects
+    proj1_path = tmp_path / "proj1"
+    proj1_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj1_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj1.git"],
+        cwd=proj1_path,
+        check=True,
+        capture_output=True,
+    )
+
+    proj2_path = tmp_path / "proj2"
+    proj2_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj2_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj2.git"],
+        cwd=proj2_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Init proj1 and create an issue
+    monkeypatch.chdir(proj1_path)
+    runner.invoke(app, ["init"])
+    result = runner.invoke(app, ["create", "Issue in proj1", "--description", "test"])
+    assert result.exit_code == 0
+    proj1_issue_id = extract_issue_id(result.output)
+
+    # Init proj2
+    monkeypatch.chdir(proj2_path)
+    runner.invoke(app, ["init"])
+
+    # From proj2 directory, close the proj1 issue
+    # BUG: This used to fail with "Project not initialized"
+    result = runner.invoke(app, ["close", proj1_issue_id])
+    assert result.exit_code == 0, f"close failed: {result.output}"
+    assert "Closed" in result.output
+
+
+def test_cli_update_with_cross_project_related_dependency(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """update should work when issue has related dependency to non-initialized project.
+
+    Bug trace-1vp9ml: When a trace has a 'related' dependency to a trace in another
+    project that is not initialized locally, trc update fails with
+    'Project not initialized' error.
+
+    Related dependencies are informational only and should not require the
+    related project to be initialized.
+    """
+    runner = CliRunner()
+
+    # Create two separate projects
+    proj1_path = tmp_path / "proj1"
+    proj1_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj1_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj1.git"],
+        cwd=proj1_path,
+        check=True,
+        capture_output=True,
+    )
+
+    proj2_path = tmp_path / "proj2"
+    proj2_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj2_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj2.git"],
+        cwd=proj2_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Init proj1 and create issues
+    monkeypatch.chdir(proj1_path)
+    runner.invoke(app, ["init"])
+    result = runner.invoke(app, ["create", "Issue A in proj1", "--description", "test"])
+    assert result.exit_code == 0
+    issue_a_id = extract_issue_id(result.output)
+
+    # Init proj2 and create an issue
+    monkeypatch.chdir(proj2_path)
+    runner.invoke(app, ["init"])
+    result = runner.invoke(app, ["create", "Issue B in proj2", "--description", "test"])
+    assert result.exit_code == 0
+    issue_b_id = extract_issue_id(result.output)
+
+    # Add a cross-project 'related' dependency from issue_a to issue_b
+    monkeypatch.chdir(proj1_path)
+    result = runner.invoke(app, ["add-dependency", issue_a_id, issue_b_id, "--type", "related"])
+    assert result.exit_code == 0
+
+    # Now simulate proj2 being "not initialized" by removing its .trace directory
+    # (This simulates the scenario where the related project was cloned elsewhere
+    # or is on a different machine)
+    import shutil
+    shutil.rmtree(proj2_path / ".trace")
+
+    # From proj1 directory, update issue_a which has a related dependency to proj2
+    # BUG: This used to fail with "Project not initialized" for proj2
+    # but related dependencies should not require the target project to be initialized
+    result = runner.invoke(app, ["update", issue_a_id, "--status", "in_progress"])
+    assert result.exit_code == 0, f"update failed: {result.output}"
+    assert "in_progress" in result.output or "Updated" in result.output
+
+
+def test_cli_update_recovers_from_corrupted_project_path(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """update should recover when projects table has corrupted current_path.
+
+    Bug trace-scxxay: When projects table has a URL in current_path instead of
+    a filesystem path (due to earlier bug trace-noekf7), trc close/update fail
+    with 'Project not initialized' even though the project IS initialized.
+
+    The fix should detect this corruption and recover by looking up the correct
+    path from the current working directory.
+    """
+    from trc_main import get_db
+
+    runner = CliRunner()
+
+    # Create and init a project
+    proj_path = tmp_path / "myproject"
+    proj_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/myproject.git"],
+        cwd=proj_path,
+        check=True,
+        capture_output=True,
+    )
+
+    monkeypatch.chdir(proj_path)
+    runner.invoke(app, ["init"])
+    result = runner.invoke(app, ["create", "Test issue", "--description", "test"])
+    assert result.exit_code == 0
+    issue_id = extract_issue_id(result.output)
+
+    # Simulate corruption: set current_path to a URL instead of filesystem path
+    db = get_db()
+    db.execute(
+        "UPDATE projects SET current_path = ? WHERE id = ?",
+        ("github.com/wrong/project", "github.com/test/myproject")
+    )
+    db.commit()
+    db.close()
+
+    # Now try to update - this should detect corruption and recover
+    # by using the current working directory to find the correct path
+    result = runner.invoke(app, ["update", issue_id, "--status", "in_progress"])
+    assert result.exit_code == 0, f"update failed with corrupted project path: {result.output}"
+    assert "in_progress" in result.output or "Updated" in result.output
+
+
+def test_cli_close_recovers_from_corrupted_project_path(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """close should recover when projects table has corrupted current_path.
+
+    Bug trace-scxxay: Same as update test - close should handle corrupted
+    project paths gracefully.
+    """
+    from trc_main import get_db
+
+    runner = CliRunner()
+
+    # Create and init a project
+    proj_path = tmp_path / "myproject"
+    proj_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/myproject.git"],
+        cwd=proj_path,
+        check=True,
+        capture_output=True,
+    )
+
+    monkeypatch.chdir(proj_path)
+    runner.invoke(app, ["init"])
+    result = runner.invoke(app, ["create", "Test issue", "--description", "test"])
+    assert result.exit_code == 0
+    issue_id = extract_issue_id(result.output)
+
+    # Simulate corruption: set current_path to a URL instead of filesystem path
+    db = get_db()
+    db.execute(
+        "UPDATE projects SET current_path = ? WHERE id = ?",
+        ("github.com/wrong/project", "github.com/test/myproject")
+    )
+    db.commit()
+    db.close()
+
+    # Now try to close - this should detect corruption and recover
+    result = runner.invoke(app, ["close", issue_id])
+    assert result.exit_code == 0, f"close failed with corrupted project path: {result.output}"
+    assert "Closed" in result.output
+
+
+def test_cli_create_with_project_flag_detects_corrupted_path(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """create --project should detect corrupted current_path and give helpful error.
+
+    When using --project flag to create an issue in another project,
+    if that project's current_path is corrupted (contains URL instead of
+    filesystem path), we can't auto-recover (don't know the correct path).
+    Instead, we detect the corruption and give a helpful error message
+    telling the user to re-run 'trc init' in the target project.
+    """
+    from trc_main import get_db
+
+    runner = CliRunner()
+
+    # Create and init target project (change-capture)
+    target_path = tmp_path / "change-capture"
+    target_path.mkdir()
+    subprocess.run(["git", "init"], cwd=target_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/change-capture.git"],
+        cwd=target_path,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.chdir(target_path)
+    runner.invoke(app, ["init"])
+
+    # Create source project (mr-reviewer)
+    source_path = tmp_path / "mr-reviewer"
+    source_path.mkdir()
+    subprocess.run(["git", "init"], cwd=source_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/mr-reviewer.git"],
+        cwd=source_path,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.chdir(source_path)
+    runner.invoke(app, ["init"])
+
+    # Corrupt the target project's current_path in the database
+    db = get_db()
+    db.execute(
+        "UPDATE projects SET current_path = ? WHERE name = ?",
+        ("github.com/corrupted/path", "change-capture")
+    )
+    db.commit()
+    db.close()
+
+    # From mr-reviewer, try to create an issue in change-capture using --project flag
+    # Should fail with helpful error (can't auto-recover without knowing correct path)
+    result = runner.invoke(app, ["create", "Test from mr-reviewer", "--description", "test", "--project", "change-capture"])
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
+    assert "trc init" in result.output.lower()
+
+    # Now re-init the target project to fix corruption
+    monkeypatch.chdir(target_path)
+    runner.invoke(app, ["init"])
+
+    # Now create should work from mr-reviewer
+    monkeypatch.chdir(source_path)
+    result = runner.invoke(app, ["create", "Test from mr-reviewer", "--description", "test", "--project", "change-capture"])
+    assert result.exit_code == 0, f"create --project failed after re-init: {result.output}"
+    assert "Created" in result.output
