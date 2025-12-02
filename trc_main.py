@@ -281,6 +281,11 @@ def resolve_project(project_flag: str, db: sqlite3.Connection) -> Optional[Dict[
 
     Returns:
         Dict with 'id', 'name', and 'path' keys, or None if not found
+
+    Notes:
+        - Validates that current_path is a real filesystem path
+        - If current_path is corrupted (URL instead of path), attempts recovery
+          by searching for projects with matching name that have valid paths
     """
     # Check if the input looks like a path (contains / or starts with ~)
     if "/" in project_flag or project_flag.startswith("~"):
@@ -295,7 +300,11 @@ def resolve_project(project_flag: str, db: sqlite3.Connection) -> Optional[Dict[
         row = cursor.fetchone()
 
         if row is not None:
-            return {"id": row[0], "name": row[1], "path": row[2]}
+            current_path = row[2]
+            # Validate current_path is a real filesystem path
+            if os.path.isabs(current_path):
+                return {"id": row[0], "name": row[1], "path": current_path}
+            # Corrupted - path in DB doesn't match reality, skip this result
 
         # If not found by current_path, try looking up by id (for cases where id is the path)
         cursor = db.execute(
@@ -305,7 +314,9 @@ def resolve_project(project_flag: str, db: sqlite3.Connection) -> Optional[Dict[
         row = cursor.fetchone()
 
         if row is not None:
-            return {"id": row[0], "name": row[1], "path": row[2]}
+            current_path = row[2]
+            if os.path.isabs(current_path):
+                return {"id": row[0], "name": row[1], "path": current_path}
 
         return None
     else:
@@ -317,7 +328,24 @@ def resolve_project(project_flag: str, db: sqlite3.Connection) -> Optional[Dict[
         row = cursor.fetchone()
 
         if row is not None:
-            return {"id": row[0], "name": row[1], "path": row[2]}
+            current_path = row[2]
+            # Validate current_path is a real filesystem path (not corrupted URL)
+            if os.path.isabs(current_path):
+                return {"id": row[0], "name": row[1], "path": current_path}
+
+            # current_path is corrupted - try to find another project with same name
+            # that has a valid path (in case of duplicate registrations)
+            cursor = db.execute(
+                "SELECT id, name, current_path FROM projects WHERE name = ?",
+                (project_flag,)
+            )
+            for alt_row in cursor.fetchall():
+                alt_path = alt_row[2]
+                if os.path.isabs(alt_path):
+                    return {"id": alt_row[0], "name": alt_row[1], "path": alt_path}
+
+            # No valid path found - return None so caller gets helpful error
+            return None
 
         return None
 
@@ -1439,6 +1467,7 @@ def get_project_path(db: sqlite3.Connection, project_id: str) -> Optional[str]:
     Notes:
         - Looks up current_path from projects table
         - Falls back to project_id if it looks like a path (backward compat)
+        - Detects and repairs corrupted current_path (URL instead of filesystem path)
     """
     cursor = db.execute(
         "SELECT current_path FROM projects WHERE id = ?",
@@ -1446,7 +1475,23 @@ def get_project_path(db: sqlite3.Connection, project_id: str) -> Optional[str]:
     )
     row = cursor.fetchone()
     if row:
-        return row[0]
+        current_path = row[0]
+        # Validate that current_path is actually a filesystem path (not corrupted URL)
+        if os.path.isabs(current_path):
+            return current_path
+        # current_path is corrupted (contains URL instead of path)
+        # Try to recover by checking if CWD matches this project
+        cwd_project = detect_project()
+        if cwd_project and cwd_project["id"] == project_id:
+            # CWD is this project - repair the DB and return correct path
+            correct_path = cwd_project["path"]
+            db.execute(
+                "UPDATE projects SET current_path = ? WHERE id = ?",
+                (correct_path, project_id)
+            )
+            db.commit()
+            return correct_path
+        # Can't recover - return None
 
     # Fallback: if project_id looks like an absolute path, use it
     if os.path.isabs(project_id) and Path(project_id).exists():
@@ -1661,8 +1706,10 @@ def show(issue_id: Annotated[str, typer.Argument(help="Issue ID")]):
             db.close()
             raise typer.Exit(code=1)
 
-        # Sync before operation
-        sync_project(db, issue["project_id"])
+        # Sync before operation - use get_project_path to convert project_id to filesystem path
+        project_path = get_project_path(db, issue["project_id"])
+        if project_path:
+            sync_project(db, project_path)
 
         # Re-fetch after sync
         issue = get_issue(db, issue_id)
