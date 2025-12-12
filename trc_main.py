@@ -269,6 +269,24 @@ def is_project_initialized(project_path: str) -> bool:
     return jsonl_path.exists()
 
 
+def register_project(db: sqlite3.Connection, name: str, path: str) -> None:
+    """Register a project in the database.
+
+    Used primarily for testing. In normal use, projects are registered
+    via `trc init` which calls detect_project().
+
+    Args:
+        db: Database connection
+        name: Project name
+        path: Absolute path to project directory
+    """
+    db.execute(
+        "INSERT OR REPLACE INTO projects (id, name, current_path) VALUES (?, ?, ?)",
+        (path, name, path),
+    )
+    db.commit()
+
+
 def resolve_project(project_flag: str, db: sqlite3.Connection) -> Optional[Dict[str, str]]:
     """Resolve project by name or path.
 
@@ -1256,6 +1274,212 @@ def move_issue(
 # JSONL Import/Export
 
 
+def validate_issue_belongs_to_project(issue_id: str, project_name: str) -> bool:
+    """Check if issue ID prefix matches project name.
+
+    This prevents cross-project contamination by ensuring issues
+    are only imported/exported to their correct project.
+
+    Issue IDs have format '{project_name}-{6_char_hash}', so we validate
+    both the prefix AND that the suffix is a valid 6-character hash.
+
+    Args:
+        issue_id: Full issue ID (e.g., 'myapp-abc123')
+        project_name: Project name (e.g., 'myapp')
+
+    Returns:
+        True if issue ID matches '{project_name}-{6_char_hash}' format
+
+    Examples:
+        validate_issue_belongs_to_project('myapp-abc123', 'myapp') -> True
+        validate_issue_belongs_to_project('other-abc123', 'myapp') -> False
+        validate_issue_belongs_to_project('change-capture-abc123', 'change-capture') -> True
+        validate_issue_belongs_to_project('change-capture-abc123', 'change-capture-infra') -> False
+        validate_issue_belongs_to_project('change-capture-infra-xyz789', 'change-capture') -> False
+    """
+    if not issue_id or not project_name:
+        return False
+    if "-" not in issue_id:
+        return False
+
+    expected_prefix = f"{project_name}-"
+    if not issue_id.startswith(expected_prefix):
+        return False
+
+    # Extract the hash portion (should be exactly 6 alphanumeric characters)
+    hash_portion = issue_id[len(expected_prefix) :]
+    if len(hash_portion) != 6:
+        return False
+    if not hash_portion.isalnum():
+        return False
+
+    return True
+
+
+def extract_project_name_from_id(project_id: str) -> str:
+    """Extract project name from project_id (URL or path).
+
+    Args:
+        project_id: Either a URL (github.com/user/repo) or absolute path
+
+    Returns:
+        Sanitized project name (last component)
+
+    Examples:
+        extract_project_name_from_id('github.com/user/myrepo') -> 'myrepo'
+        extract_project_name_from_id('/Users/me/Repos/myrepo') -> 'myrepo'
+        extract_project_name_from_id('/path/to/my_project') -> 'my-project'
+    """
+    if "/" in project_id and not project_id.startswith("/"):
+        # URL format: github.com/user/repo
+        name = project_id.split("/")[-1]
+    else:
+        # Path format
+        name = Path(project_id).name
+    # Sanitize to match how project names are stored
+    return sanitize_project_name(name)
+
+
+def extract_project_name_from_issue_id(issue_id: str) -> Optional[str]:
+    """Extract the project name prefix from an issue ID.
+
+    Issue IDs have format '{project_name}-{6_char_hash}'.
+    This function extracts the project name portion.
+
+    Args:
+        issue_id: Full issue ID (e.g., 'myapp-abc123', 'change-capture-infra-xyz789')
+
+    Returns:
+        Project name or None if ID format is invalid
+
+    Examples:
+        extract_project_name_from_issue_id('myapp-abc123') -> 'myapp'
+        extract_project_name_from_issue_id('change-capture-infra-xyz789') -> 'change-capture-infra'
+        extract_project_name_from_issue_id('invalid') -> None
+    """
+    if not issue_id or "-" not in issue_id:
+        return None
+
+    # Issue ID format: {project_name}-{6_char_hash}
+    # The hash is exactly 6 alphanumeric characters
+    # Split from right to handle project names with hyphens
+    parts = issue_id.rsplit("-", 1)
+    if len(parts) != 2:
+        return None
+
+    project_name, hash_part = parts
+    # Validate hash is 6 alphanumeric chars
+    if len(hash_part) != 6 or not hash_part.isalnum():
+        return None
+
+    return project_name
+
+
+def find_project_by_name(db: sqlite3.Connection, project_name: str) -> Optional[Dict[str, Any]]:
+    """Find a project by name in the database.
+
+    Args:
+        db: Database connection
+        project_name: Project name to search for
+
+    Returns:
+        Dict with 'id', 'name', 'path' or None if not found
+    """
+    cursor = db.execute(
+        "SELECT id, name, current_path FROM projects WHERE name = ?",
+        (project_name,),
+    )
+    row = cursor.fetchone()
+    if row:
+        return {"id": row[0], "name": row[1], "path": row[2]}
+    return None
+
+
+def repair_contaminated_issues(
+    db: sqlite3.Connection,
+    project_id: Optional[str] = None,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """Find and fix issues with mismatched project_id.
+
+    Contamination occurs when an issue's ID prefix doesn't match the
+    project it's assigned to. This function finds such issues and
+    reassigns them to the correct project based on their ID prefix.
+
+    Args:
+        db: Database connection
+        project_id: Optional - only examine issues in this project
+        dry_run: If True, report what would be fixed without making changes
+
+    Returns:
+        Dict with stats:
+            - examined: Number of issues examined
+            - contaminated: Number of contaminated issues found
+            - repaired: Number of issues reassigned
+            - orphaned: Number of issues with no matching project
+            - affected_projects: List of project paths that were affected
+    """
+    stats: Dict[str, Any] = {
+        "examined": 0,
+        "contaminated": 0,
+        "repaired": 0,
+        "orphaned": 0,
+        "affected_projects": set(),
+    }
+
+    # Build query
+    if project_id:
+        cursor = db.execute(
+            "SELECT id, project_id FROM issues WHERE project_id = ?",
+            (project_id,),
+        )
+    else:
+        cursor = db.execute("SELECT id, project_id FROM issues")
+
+    issues = cursor.fetchall()
+
+    for issue_id, current_project_id in issues:
+        stats["examined"] += 1
+
+        # Extract expected project name from issue ID
+        expected_project_name = extract_project_name_from_issue_id(issue_id)
+        if not expected_project_name:
+            continue  # Malformed ID, skip
+
+        # Get current project name
+        current_project_name = extract_project_name_from_id(current_project_id)
+
+        # Check if issue belongs to current project
+        if validate_issue_belongs_to_project(issue_id, current_project_name):
+            continue  # Issue is correctly assigned
+
+        # Found contamination
+        stats["contaminated"] += 1
+        stats["affected_projects"].add(current_project_id)
+
+        # Find the correct project for this issue
+        correct_project = find_project_by_name(db, expected_project_name)
+
+        if correct_project:
+            if not dry_run:
+                db.execute(
+                    "UPDATE issues SET project_id = ? WHERE id = ?",
+                    (correct_project["path"], issue_id),
+                )
+            stats["repaired"] += 1
+            stats["affected_projects"].add(correct_project["path"])
+        else:
+            stats["orphaned"] += 1
+
+    if not dry_run and stats["repaired"] > 0:
+        db.commit()
+
+    # Convert set to list for JSON serialization
+    stats["affected_projects"] = list(stats["affected_projects"])
+
+    return stats
+
+
 def export_to_jsonl(
     db: sqlite3.Connection,
     project_id: str,
@@ -1272,13 +1496,27 @@ def export_to_jsonl(
         One JSON object per line, sorted by ID
         Includes dependencies inline
         DOES NOT include project_id (project identity from git context)
+
+    Note:
+        Defense in depth: Only exports issues whose ID prefix matches
+        the project name, filtering out any contaminated data.
     """
+    # Get project name for validation
+    project_name = extract_project_name_from_id(project_id)
+
     # Get all issues for project, sorted by ID
     cursor = db.execute(
         "SELECT * FROM issues WHERE project_id = ? ORDER BY id",
         (project_id,),
     )
-    issues = [dict(row) for row in cursor.fetchall()]
+    all_issues = [dict(row) for row in cursor.fetchall()]
+
+    # Filter to only issues whose ID matches project name (defense in depth)
+    issues = [
+        issue
+        for issue in all_issues
+        if validate_issue_belongs_to_project(issue["id"], project_name)
+    ]
 
     # Write to file
     path = Path(jsonl_path)
@@ -1315,20 +1553,24 @@ def import_from_jsonl(
         project_id: Project ID to assign to imported issues (from git context)
 
     Returns:
-        Dict with stats: created, updated, errors
+        Dict with stats: created, updated, skipped, errors
 
     Notes:
         - Creates issues that don't exist
         - Updates issues that already exist
+        - Skips issues whose ID prefix doesn't match project name
         - Skips malformed lines and continues
         - Creates dependencies after all issues imported
         - Ignores project_id from JSONL if present (uses parameter instead)
     """
-    stats = {"created": 0, "updated": 0, "errors": 0}
+    stats = {"created": 0, "updated": 0, "skipped": 0, "errors": 0}
     path = Path(jsonl_path)
 
     if not path.exists():
         return stats
+
+    # Get project name for validation
+    project_name = extract_project_name_from_id(project_id)
 
     # Read all issues first
     issues_to_import = []
@@ -1350,6 +1592,11 @@ def import_from_jsonl(
     for issue_data in issues_to_import:
         try:
             issue_id = issue_data["id"]
+
+            # Validate issue belongs to this project
+            if not validate_issue_belongs_to_project(issue_id, project_name):
+                stats["skipped"] += 1
+                continue
 
             # Check if issue exists
             existing = get_issue(db, issue_id)
@@ -2338,6 +2585,99 @@ def move(
         print(f"  To:   {new_project_id} ({new_project_path})")
 
         db.close()
+
+
+@app.command()
+def repair(
+    project_flag: Annotated[
+        Optional[str], typer.Option("--project", "-p", help="Repair specific project only")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show what would be repaired without making changes")
+    ] = False,
+    output_json: Annotated[
+        bool, typer.Option("--json", help="Output results as JSON")
+    ] = False,
+):
+    """Repair contaminated issue data.
+
+    Finds issues where the ID prefix doesn't match the project assignment
+    and reassigns them to the correct project based on their ID.
+
+    Example:
+        trc repair --dry-run    # Preview what would be fixed
+        trc repair              # Actually fix contamination
+        trc repair --project myapp  # Fix only in myapp project
+    """
+    db = get_db()
+
+    # Resolve project if specified
+    project_id = None
+    if project_flag:
+        resolved = resolve_project(project_flag, db)
+        if resolved is None:
+            print(f"Error: Project '{project_flag}' not found")
+            db.close()
+            raise typer.Exit(code=1)
+        project_id = resolved["path"]
+
+    # Run repair
+    stats = repair_contaminated_issues(db, project_id=project_id, dry_run=dry_run)
+
+    if output_json:
+        print(json.dumps(stats, indent=2))
+        db.close()
+        return
+
+    # Human-readable output
+    if dry_run:
+        print("Dry run - no changes made\n")
+
+    print(f"Examined: {stats['examined']} issues")
+    print(f"Contaminated: {stats['contaminated']} issues")
+
+    if stats["contaminated"] == 0:
+        print("\nNo contamination found.")
+        db.close()
+        return
+
+    if dry_run:
+        print(f"\nWould repair: {stats['repaired']} issues")
+        if stats["orphaned"] > 0:
+            print(f"Orphaned (no matching project): {stats['orphaned']} issues")
+        print("\nRun 'trc repair' without --dry-run to apply changes.")
+    else:
+        print(f"\nRepaired: {stats['repaired']} issues")
+        if stats["orphaned"] > 0:
+            print(f"Orphaned (no matching project): {stats['orphaned']} issues")
+
+        # Re-export affected projects
+        if stats["affected_projects"]:
+            print("\nRe-exporting affected projects:")
+            for project_path in stats["affected_projects"]:
+                trace_dir = Path(project_path) / ".trace"
+                if trace_dir.exists():
+                    jsonl_path = trace_dir / "issues.jsonl"
+                    # Get project_id for this path
+                    cursor = db.execute(
+                        "SELECT id FROM projects WHERE current_path = ?",
+                        (project_path,),
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        export_to_jsonl(db, row[0], str(jsonl_path))
+                        set_last_sync_time(db, row[0], time.time())
+                        # Count issues exported
+                        cursor = db.execute(
+                            "SELECT COUNT(*) FROM issues WHERE project_id = ?",
+                            (row[0],),
+                        )
+                        count = cursor.fetchone()[0]
+                        print(f"  - {jsonl_path} ({count} issues)")
+
+            print("\nCommit the updated .trace/issues.jsonl files to git.")
+
+    db.close()
 
 
 @app.command()

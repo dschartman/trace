@@ -1,7 +1,6 @@
 """Tests for JSONL import/export and file locking."""
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -26,8 +25,8 @@ def test_export_to_jsonl_sorts_by_id(db_connection, tmp_path):
     from trc_main import create_issue, export_to_jsonl
 
     # Create in reverse order
-    issue2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue Z")
-    issue1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue A")
+    _issue2 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue Z")
+    _issue1 = create_issue(db_connection, "/path/to/myapp", "myapp", "Issue A")
 
     jsonl_path = tmp_path / "issues.jsonl"
     export_to_jsonl(db_connection, "/path/to/myapp", str(jsonl_path))
@@ -53,6 +52,7 @@ def test_export_to_jsonl_includes_all_fields(db_connection, tmp_path):
         priority=1,
         status="in_progress",
     )
+    assert issue is not None
 
     jsonl_path = tmp_path / "issues.jsonl"
     export_to_jsonl(db_connection, "/path/to/myapp", str(jsonl_path))
@@ -75,6 +75,8 @@ def test_export_to_jsonl_includes_dependencies(db_connection, tmp_path):
 
     parent = create_issue(db_connection, "/path/to/myapp", "myapp", "Parent")
     child = create_issue(db_connection, "/path/to/myapp", "myapp", "Child")
+    assert parent is not None
+    assert child is not None
 
     add_dependency(db_connection, child["id"], parent["id"], "parent")
 
@@ -159,10 +161,12 @@ def test_import_from_jsonl_creates_issues(db_connection, tmp_path):
     assert stats["updated"] == 0
 
     issue1 = get_issue(db_connection, "myapp-abc123")
+    assert issue1 is not None
     assert issue1["title"] == "Test 1"
     assert issue1["status"] == "open"
 
     issue2 = get_issue(db_connection, "myapp-def456")
+    assert issue2 is not None
     assert issue2["title"] == "Test 2"
     assert issue2["status"] == "closed"
 
@@ -190,6 +194,7 @@ def test_import_from_jsonl_updates_existing_issues(db_connection, tmp_path):
     assert stats["updated"] == 1
 
     updated = get_issue(db_connection, issue_id)
+    assert updated is not None
     assert updated["title"] == "New title"
 
 
@@ -199,16 +204,16 @@ def test_import_from_jsonl_creates_dependencies(db_connection, tmp_path):
 
     jsonl_path = tmp_path / "issues.jsonl"
     jsonl_path.write_text(
-        '{"id":"myapp-parent","project_id":"/path/to/myapp","title":"Parent","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[]}\n'
-        '{"id":"myapp-child","project_id":"/path/to/myapp","title":"Child","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[{"depends_on_id":"myapp-parent","type":"parent"}]}\n'
+        '{"id":"myapp-abc123","project_id":"/path/to/myapp","title":"Parent","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[]}\n'
+        '{"id":"myapp-def456","project_id":"/path/to/myapp","title":"Child","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[{"depends_on_id":"myapp-abc123","type":"parent"}]}\n'
     )
 
     import_from_jsonl(db_connection, str(jsonl_path), project_id="/path/to/myapp")
 
-    deps = get_dependencies(db_connection, "myapp-child")
+    deps = get_dependencies(db_connection, "myapp-def456")
 
     assert len(deps) == 1
-    assert deps[0]["depends_on_id"] == "myapp-parent"
+    assert deps[0]["depends_on_id"] == "myapp-abc123"
     assert deps[0]["type"] == "parent"
 
 
@@ -261,6 +266,8 @@ def test_export_import_roundtrip(db_connection, tmp_path):
         priority=1,
         status="in_progress",
     )
+    assert parent is not None
+    assert child is not None
     add_dependency(db_connection, child["id"], parent["id"], "parent")
 
     # Export
@@ -278,6 +285,8 @@ def test_export_import_roundtrip(db_connection, tmp_path):
     # Verify
     parent_restored = get_issue(db_connection, parent["id"])
     child_restored = get_issue(db_connection, child["id"])
+    assert parent_restored is not None
+    assert child_restored is not None
 
     assert parent_restored["title"] == "Parent"
     assert parent_restored["priority"] == 0
@@ -341,14 +350,19 @@ def test_sync_project_imports_when_jsonl_newer(db_connection, tmp_path):
 
     # Detect project to get proper project_id
     project = detect_project(cwd=str(tmp_path))
+    assert project is not None
     project_id = project["id"]
+    project_name = project["name"]
+
+    # Create issue ID that matches project name (6-char hash required)
+    issue_id = f"{project_name}-abc123"
 
     # Create JSONL file
     trace_dir = tmp_path / ".trace"
     trace_dir.mkdir(exist_ok=True)
     jsonl_path = trace_dir / "issues.jsonl"
     jsonl_path.write_text(
-        '{"id":"myapp-abc123","project_id":"' + str(tmp_path) + '","title":"Test Issue","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[]}\n'
+        '{"id":"' + issue_id + '","project_id":"' + str(tmp_path) + '","title":"Test Issue","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[]}\n'
     )
 
     # Set old sync time
@@ -358,7 +372,7 @@ def test_sync_project_imports_when_jsonl_newer(db_connection, tmp_path):
     sync_project(db_connection, str(tmp_path))
 
     # Verify import
-    issue = get_issue(db_connection, "myapp-abc123")
+    issue = get_issue(db_connection, issue_id)
     assert issue is not None
     assert issue["title"] == "Test Issue"
 
@@ -405,7 +419,6 @@ def test_sync_project_handles_missing_jsonl(db_connection, tmp_path):
 def test_sync_project_updates_last_sync_time(db_connection, tmp_path):
     """Should update last sync timestamp after import."""
     from trc_main import sync_project, get_last_sync_time, detect_project
-    import time
 
     # Create git repo (required for sync_project)
     git_dir = tmp_path / ".git"
@@ -415,14 +428,19 @@ def test_sync_project_updates_last_sync_time(db_connection, tmp_path):
 
     # Detect project to get proper project_id
     project = detect_project(cwd=str(tmp_path))
+    assert project is not None
     project_id = project["id"]
+    project_name = project["name"]
+
+    # Create issue ID that matches project name (6-char hash required)
+    issue_id = f"{project_name}-abc123"
 
     # Create JSONL file
     trace_dir = tmp_path / ".trace"
     trace_dir.mkdir(exist_ok=True)
     jsonl_path = trace_dir / "issues.jsonl"
     jsonl_path.write_text(
-        '{"id":"myapp-abc123","project_id":"' + str(tmp_path) + '","title":"Test","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[]}\n'
+        '{"id":"' + issue_id + '","project_id":"' + str(tmp_path) + '","title":"Test","description":"","status":"open","priority":2,"created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:00:00Z","closed_at":null,"dependencies":[]}\n'
     )
 
     jsonl_mtime = jsonl_path.stat().st_mtime
