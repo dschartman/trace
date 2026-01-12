@@ -104,3 +104,38 @@ def existing_ids():
         "myapp-def456",
         "mylib-xyz789",
     }
+
+
+@pytest.fixture
+def initialized_project(tmp_trace_dir, sample_project):
+    """Create an initialized project with database.
+
+    Combines tmp_trace_dir (for isolated db) and sample_project (for git repo),
+    registering the project in the database.
+
+    Returns a dict with:
+        - db: database connection
+        - project: dict with id, name, path
+    """
+    from trc_main import init_database
+
+    db = init_database(str(tmp_trace_dir["db"]))
+
+    # Register project in database
+    project_id = "github.com/user/myapp"
+    db.execute(
+        "INSERT INTO projects (id, name, current_path) VALUES (?, ?, ?)",
+        (project_id, sample_project["name"], sample_project["path"]),
+    )
+    db.commit()
+
+    yield {
+        "db": db,
+        "project": {
+            "id": project_id,
+            "name": sample_project["name"],
+            "path": sample_project["path"],
+        },
+    }
+
+    db.close()

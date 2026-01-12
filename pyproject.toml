@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "trc"
-version = "0.2.1"
+version = "0.2.3"
 description = "Minimal distributed issue tracker for AI agent workflows"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,7 +16,7 @@ dependencies = [
 trc = "trc_main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["trc_main.py"]
+packages = ["trace_core", "trc_main.py"]
 
 [dependency-groups]
 dev = [

@@ -79,7 +79,7 @@ def test_generate_id_fails_after_max_retries():
 
     # Mock the hash generation to always return the same value
     # This forces every attempt to generate the same ID
-    with patch("trc_main.hashlib.sha256") as mock_sha256:
+    with patch("trace_core.ids.hashlib.sha256") as mock_sha256:
         # Make SHA256 always return the same digest
         mock_digest = b"\x12\x34\x56\x78" + b"\x00" * 28
         mock_sha256.return_value.digest.return_value = mock_digest

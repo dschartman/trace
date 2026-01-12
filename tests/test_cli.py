@@ -1893,3 +1893,109 @@ def test_cli_create_with_project_flag_detects_corrupted_path(sample_project, tmp
     result = runner.invoke(app, ["create", "Test from mr-reviewer", "--description", "test", "--project", "change-capture"])
     assert result.exit_code == 0, f"create --project failed after re-init: {result.output}"
     assert "Created" in result.output
+
+
+def test_cli_guide_displays_integration_guide(tmp_trace_dir):
+    """guide command should display AI agent integration guide."""
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["guide"])
+
+    assert result.exit_code == 0
+    assert "Trace (trc) - AI Agent Integration Guide" in result.output
+    assert "trc init" in result.output
+    assert "trc create" in result.output
+    assert "trc ready" in result.output
+    assert "trc list" in result.output
+    assert "trc close" in result.output
+    assert "--description" in result.output
+
+
+def test_cli_repair_dry_run_no_contamination(sample_project, tmp_trace_dir, monkeypatch):
+    """repair command with --dry-run should report no contamination in clean project."""
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    # Initialize project
+    runner.invoke(app, ["init"])
+
+    # Create a normal issue
+    runner.invoke(app, ["create", "Test issue", "--description", "test"])
+
+    # Run repair in dry-run mode
+    result = runner.invoke(app, ["repair", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "No contamination found" in result.output
+    assert "Examined:" in result.output
+
+
+def test_cli_repair_json_output(sample_project, tmp_trace_dir, monkeypatch):
+    """repair command should support --json output."""
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    # Initialize project
+    runner.invoke(app, ["init"])
+
+    # Create a normal issue
+    runner.invoke(app, ["create", "Test issue", "--description", "test"])
+
+    # Run repair with JSON output
+    result = runner.invoke(app, ["repair", "--json"])
+
+    assert result.exit_code == 0
+    # Should be valid JSON
+    import json
+    output_data = json.loads(result.output)
+    assert "examined" in output_data
+    assert "contaminated" in output_data
+    assert "repaired" in output_data
+    assert output_data["examined"] >= 1
+    assert output_data["contaminated"] == 0
+
+
+def test_cli_repair_with_project_flag(sample_project, tmp_trace_dir, tmp_path, monkeypatch):
+    """repair command should accept --project flag."""
+    runner = CliRunner()
+
+    # Set up first project
+    proj1_path = sample_project["path"]
+    monkeypatch.chdir(proj1_path)
+    runner.invoke(app, ["init"])
+    runner.invoke(app, ["create", "Issue in proj1", "--description", "test"])
+
+    # Set up second project
+    proj2_path = tmp_path / "proj2"
+    proj2_path.mkdir()
+    subprocess.run(["git", "init"], cwd=proj2_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/test/proj2.git"],
+        cwd=proj2_path,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.chdir(proj2_path)
+    runner.invoke(app, ["init"])
+    runner.invoke(app, ["create", "Issue in proj2", "--description", "test"])
+
+    # Run repair from proj1 with --project flag targeting proj2
+    monkeypatch.chdir(proj1_path)
+    result = runner.invoke(app, ["repair", "--project", "proj2", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "Examined:" in result.output
+
+
+def test_cli_repair_project_not_found(sample_project, tmp_trace_dir, monkeypatch):
+    """repair command should error if --project not found."""
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Try to repair a non-existent project
+    result = runner.invoke(app, ["repair", "--project", "nonexistent"])
+
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
