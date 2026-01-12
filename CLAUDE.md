@@ -6,8 +6,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Trace** is a minimal distributed issue tracker designed specifically for AI agent workflows. It enables cross-project work tracking, iterative planning, and easy reorganization as understanding evolves.
 
-**Current Status**: Core implementation complete. All 156 tests passing. Phases 1-6 complete (core functionality, CRUD, dependencies, JSONL sync, reorganization, queries). Automatic JSONL sync implemented. Full CLI with all flags.
-
 **Core Philosophy**: Work structure should be fluid, not rigid. Make reorganization trivial so structure becomes a tool for thinking, not a constraint.
 
 ## Development Commands
@@ -164,16 +162,19 @@ Cross-project dependencies are fully supported.
 
 ```
 tests/
-├── conftest.py              # Shared fixtures (tmp_trace_dir, db_connection, etc.)
-├── test_ids.py              # ID generation & collision detection
-├── test_projects.py         # Project detection & registry
-├── test_issues.py           # Issue CRUD operations
-├── test_dependencies.py     # Dependency tracking
-├── test_sync.py             # JSONL ↔ DB sync
-├── test_cli.py              # CLI commands
-├── test_reorganization.py   # Move/reparent operations
-├── test_queries.py          # List, ready, tree queries
-└── test_integration.py      # End-to-end workflows
+├── conftest.py                        # Shared fixtures
+├── test_cli.py                        # CLI commands
+├── test_cross_project_contamination.py # Contamination prevention
+├── test_db.py                         # Database schema
+├── test_dependencies.py               # Dependency tracking
+├── test_ids.py                        # ID generation
+├── test_issues.py                     # Issue CRUD
+├── test_projects.py                   # Project detection
+├── test_reorganization.py             # Move/reparent
+├── test_sync.py                       # JSONL sync
+├── test_queries.py                    # List, ready, tree
+├── test_integration.py                # End-to-end workflows
+└── [additional edge case tests]       # Locking, isolation, etc.
 ```
 
 ### Coverage Requirements
@@ -192,27 +193,14 @@ Examples:
 - `test_create_issue_with_parent_links_correctly`
 - `test_sync_imports_when_jsonl_newer`
 
-## Implementation Phases
-
-### Phase 1: Core Infrastructure (Current)
-- Hash ID generation with collision detection
-- Project detection and registry
-- Database schema with constraints
-- File locking for sync safety
-- Issue CRUD operations
-- JSONL import/export
-
-### Phase 2-7
-See `docs/implementation-plan.md` for complete breakdown.
-
 ## Key Design Decisions
 
 1. **No enforced hierarchy**: Use flat parent-child relationships, not epic→feature→story
 2. **Path-based project IDs**: Absolute paths ensure uniqueness
 3. **Default project**: Discovery inbox at `~/.trace/default/` for pre-project work
 4. **Immediate JSONL export**: Prioritize safety over performance
-5. **Single-file implementation**: Target ~500 lines in `trc_main.py`
-6. **No daemon (Phase 1)**: Subprocess is fast enough
+5. **Modular implementation**: Core logic in `trace_core/` package, CLI entry point in `trc_main.py`
+6. **No daemon**: Subprocess is fast enough
 7. **No size field**: Removed - not useful for AI agents
 8. **No auto-close parents**: Parents require explicit close action
 9. **Manual merge conflicts**: Treat JSONL like code - user resolves conflicts
@@ -261,7 +249,8 @@ Critical differentiator - make these trivial:
 
 ## File Locations
 
-- Implementation: `trc_main.py` (single file, ~500 lines target)
+- Implementation: `trace_core/` package (modular design)
+- CLI entry point: `trc_main.py` (re-exports from trace_core)
 - Tests: `tests/` directory
 - Docs: `docs/` directory
   - `product-vision.md` - Core philosophy
@@ -305,8 +294,6 @@ Trace is designed for AI agents (especially Claude Code):
 - Error messages are structured and parseable
 - Bulk operations minimize round-trips
 - Context-rich output (e.g., `trc show` includes dependencies, children, completion %)
-
-Future: MCP server will expose trace as native Claude Code tool.
 
 ### CRITICAL: Trace vs TodoWrite
 

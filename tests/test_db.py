@@ -21,6 +21,7 @@ def test_init_db_creates_all_tables(tmp_trace_dir):
     assert "projects" in tables
     assert "dependencies" in tables
     assert "metadata" in tables
+    assert "comments" in tables
 
 
 def test_init_db_creates_issues_table_with_correct_schema(tmp_trace_dir):
@@ -86,6 +87,22 @@ def test_init_db_creates_metadata_table_with_correct_schema(tmp_trace_dir):
     assert columns["value"] == "TEXT"
 
 
+def test_init_db_creates_comments_table_with_correct_schema(tmp_trace_dir):
+    """Comments table should have all required columns."""
+    from trc_main import init_database
+
+    db = init_database(str(tmp_trace_dir["db"]))
+
+    cursor = db.execute("PRAGMA table_info(comments)")
+    columns = {row[1]: row[2] for row in cursor.fetchall()}
+
+    assert columns["id"] == "INTEGER"  # AUTOINCREMENT
+    assert columns["issue_id"] == "TEXT"
+    assert columns["content"] == "TEXT"
+    assert columns["source"] == "TEXT"
+    assert columns["created_at"] == "TEXT"
+
+
 def test_init_db_creates_indexes(tmp_trace_dir):
     """Should create indexes for common queries."""
     from trc_main import init_database
@@ -106,6 +123,9 @@ def test_init_db_creates_indexes(tmp_trace_dir):
     assert "idx_deps_issue" in indexes
     assert "idx_deps_depends" in indexes
 
+    # Comments indexes
+    assert "idx_comments_issue" in indexes
+
 
 def test_init_db_sets_schema_version(tmp_trace_dir):
     """Should record schema version in metadata."""
@@ -117,7 +137,7 @@ def test_init_db_sets_schema_version(tmp_trace_dir):
     row = cursor.fetchone()
 
     assert row is not None
-    assert row[0] == "2"  # Current schema version
+    assert row[0] == "3"  # Current schema version (v3 adds comments table)
 
 
 def test_init_db_enforces_status_constraint(tmp_trace_dir):
