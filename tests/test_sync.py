@@ -451,3 +451,119 @@ def test_sync_project_updates_last_sync_time(db_connection, tmp_path):
     # Verify last sync time was set
     last_sync = get_last_sync_time(db_connection, project_id)
     assert last_sync == jsonl_mtime
+
+
+def test_sync_project_auto_generates_uuid_when_missing(db_connection, tmp_path):
+    """sync_project should auto-generate UUID if .trace/id doesn't exist."""
+    import uuid as uuid_module
+    from trc_main import detect_project, sync_project
+
+    # Create git repo
+    (tmp_path / ".git").mkdir()
+
+    # Create .trace without id file
+    trace_dir = tmp_path / ".trace"
+    trace_dir.mkdir(exist_ok=True)
+    jsonl_path = trace_dir / "issues.jsonl"
+    jsonl_path.write_text("")
+
+    # Make sure no id file exists
+    id_file = trace_dir / "id"
+    if id_file.exists():
+        id_file.unlink()
+
+    # Sync project
+    sync_project(db_connection, str(tmp_path))
+
+    # UUID file should be created
+    assert id_file.exists()
+    uuid_content = id_file.read_text().strip()
+    # Should be valid UUID
+    parsed = uuid_module.UUID(uuid_content)
+    assert parsed.version == 4
+
+
+def test_sync_project_stores_uuid_in_database(db_connection, tmp_path):
+    """sync_project should store auto-generated UUID in projects table."""
+    from trc_main import detect_project, sync_project
+
+    # Create git repo
+    (tmp_path / ".git").mkdir()
+
+    # Create .trace without id file
+    trace_dir = tmp_path / ".trace"
+    trace_dir.mkdir(exist_ok=True)
+    jsonl_path = trace_dir / "issues.jsonl"
+    jsonl_path.write_text("")
+
+    # Make sure no id file exists
+    id_file = trace_dir / "id"
+    if id_file.exists():
+        id_file.unlink()
+
+    # Sync project
+    sync_project(db_connection, str(tmp_path))
+
+    # Read UUID from file
+    stored_uuid = id_file.read_text().strip()
+
+    # Check database has the UUID
+    cursor = db_connection.execute(
+        "SELECT uuid FROM projects WHERE current_path = ?",
+        (str(tmp_path),)
+    )
+    row = cursor.fetchone()
+    assert row is not None
+    assert row[0] == stored_uuid
+
+
+def test_sync_project_preserves_existing_uuid(db_connection, tmp_path):
+    """sync_project should not overwrite existing UUID."""
+    from trc_main import sync_project
+
+    # Create git repo
+    (tmp_path / ".git").mkdir()
+
+    # Create .trace with existing UUID
+    trace_dir = tmp_path / ".trace"
+    trace_dir.mkdir(exist_ok=True)
+    id_file = trace_dir / "id"
+    existing_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    id_file.write_text(existing_uuid + "\n")
+    jsonl_path = trace_dir / "issues.jsonl"
+    jsonl_path.write_text("")
+
+    # Sync project
+    sync_project(db_connection, str(tmp_path))
+
+    # UUID should be preserved
+    assert id_file.read_text().strip() == existing_uuid
+
+
+def test_sync_project_registers_project_with_uuid(db_connection, tmp_path):
+    """sync_project should register project with UUID in database."""
+    from trc_main import sync_project
+
+    # Create git repo
+    (tmp_path / ".git").mkdir()
+
+    # Create .trace with existing UUID
+    trace_dir = tmp_path / ".trace"
+    trace_dir.mkdir(exist_ok=True)
+    id_file = trace_dir / "id"
+    existing_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    id_file.write_text(existing_uuid + "\n")
+    jsonl_path = trace_dir / "issues.jsonl"
+    jsonl_path.write_text("")
+
+    # Sync project
+    sync_project(db_connection, str(tmp_path))
+
+    # Check database has the UUID
+    cursor = db_connection.execute(
+        "SELECT uuid FROM projects WHERE current_path = ?",
+        (str(tmp_path),)
+    )
+    row = cursor.fetchone()
+    assert row is not None
+    assert row[0] == existing_uuid

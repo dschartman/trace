@@ -1,12 +1,13 @@
-"""Shared utilities for Trace - timestamps, paths, file locking."""
+"""Shared utilities for Trace - timestamps, paths, file locking, UUID management."""
 
 import fcntl
 import re
 import time
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Optional
 
 from trace_core.exceptions import LockError
 
@@ -14,6 +15,9 @@ __all__ = [
     "get_iso_timestamp",
     "file_lock",
     "sanitize_project_name",
+    "generate_project_uuid",
+    "get_project_uuid",
+    "write_project_uuid",
 ]
 
 
@@ -114,3 +118,44 @@ def sanitize_project_name(name: str) -> str:
     name = name.strip("-")
 
     return name
+
+
+def generate_project_uuid() -> str:
+    """Generate a new UUID v4 for project identification.
+
+    Returns:
+        UUID v4 string (e.g., "550e8400-e29b-41d4-a716-446655440000")
+    """
+    return str(uuid.uuid4())
+
+
+def get_project_uuid(trace_dir: Path) -> Optional[str]:
+    """Read project UUID from .trace/id file.
+
+    Args:
+        trace_dir: Path to .trace directory
+
+    Returns:
+        UUID string if file exists and has content, None otherwise
+    """
+    id_file = Path(trace_dir) / "id"
+
+    if not id_file.exists():
+        return None
+
+    try:
+        content = id_file.read_text().strip()
+        return content if content else None
+    except Exception:
+        return None
+
+
+def write_project_uuid(trace_dir: Path, project_uuid: str) -> None:
+    """Write project UUID to .trace/id file.
+
+    Args:
+        trace_dir: Path to .trace directory
+        project_uuid: UUID string to write
+    """
+    id_file = Path(trace_dir) / "id"
+    id_file.write_text(f"{project_uuid}\n")

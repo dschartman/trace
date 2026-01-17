@@ -11,7 +11,7 @@ from trace_core.contamination import (
     validate_issue_belongs_to_project,
     extract_project_name_from_id,
 )
-from trace_core.utils import get_iso_timestamp
+from trace_core.utils import get_iso_timestamp, get_project_uuid, generate_project_uuid, write_project_uuid
 
 __all__ = [
     "get_last_sync_time",
@@ -67,6 +67,7 @@ def sync_project(db: sqlite3.Connection, project_path: str) -> None:
         - Imports only if JSONL is newer (e.g., after git pull)
         - Updates last sync timestamp after import
         - Detects project_id from git context for portable imports
+        - Auto-generates UUID if missing from .trace/id
     """
     # Detect project ID from git context
     project = detect_project(cwd=project_path)
@@ -75,6 +76,22 @@ def sync_project(db: sqlite3.Connection, project_path: str) -> None:
         return
 
     project_id = project["id"]
+
+    # Auto-generate UUID if .trace exists but .trace/id doesn't
+    trace_dir = Path(project_path) / ".trace"
+    if trace_dir.exists():
+        project_uuid = get_project_uuid(trace_dir)
+        if project_uuid is None:
+            # Generate new UUID for existing project (auto-migration)
+            project_uuid = generate_project_uuid()
+            write_project_uuid(trace_dir, project_uuid)
+
+        # Register/update project with UUID in database
+        db.execute(
+            "INSERT OR REPLACE INTO projects (id, name, current_path, uuid) VALUES (?, ?, ?, ?)",
+            (project_id, project["name"], project_path, project_uuid)
+        )
+        db.commit()
 
     # AUTO-MERGE: Check if project_id changed (e.g., local path -> URL)
     # Find issues with different project_id but for this same path
@@ -150,7 +167,7 @@ def export_to_jsonl(
 
     Args:
         db: Database connection
-        project_id: Project ID (URL or path)
+        project_id: Project ID (UUID, URL, or path)
         jsonl_path: Path to JSONL file to create
 
     Format:
@@ -162,8 +179,17 @@ def export_to_jsonl(
         Defense in depth: Only exports issues whose ID prefix matches
         the project name, filtering out any contaminated data.
     """
-    # Get project name for validation
-    project_name = extract_project_name_from_id(project_id)
+    # Get project name - first try from DB (for UUID-based lookup), then extract from ID
+    cursor = db.execute(
+        "SELECT name FROM projects WHERE uuid = ?",
+        (project_id,)
+    )
+    row = cursor.fetchone()
+    if row:
+        project_name = row[0]
+    else:
+        # Fall back to extracting from ID (for backward compat with URL/path)
+        project_name = extract_project_name_from_id(project_id)
 
     # Get all issues for project, sorted by ID
     cursor = db.execute(

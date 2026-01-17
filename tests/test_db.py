@@ -137,7 +137,7 @@ def test_init_db_sets_schema_version(tmp_trace_dir):
     row = cursor.fetchone()
 
     assert row is not None
-    assert row[0] == "3"  # Current schema version (v3 adds comments table)
+    assert row[0] == "4"  # Current schema version (v4 adds UUID column)
 
 
 def test_init_db_enforces_status_constraint(tmp_trace_dir):
@@ -281,3 +281,78 @@ def test_init_db_is_idempotent(tmp_trace_dir):
     assert "issues" in tables
     assert "projects" in tables
     assert "dependencies" in tables
+
+
+def test_init_db_projects_table_has_uuid_column(tmp_trace_dir):
+    """Projects table should have uuid column for UUID-based project identification."""
+    from trc_main import init_database
+
+    db = init_database(str(tmp_trace_dir["db"]))
+
+    cursor = db.execute("PRAGMA table_info(projects)")
+    columns = {row[1]: row[2] for row in cursor.fetchall()}
+
+    assert "uuid" in columns
+    assert columns["uuid"] == "TEXT"
+
+
+def test_migrate_v3_to_v4_preserves_projects(tmp_trace_dir):
+    """Migration from v3 to v4 should preserve existing projects."""
+    import sqlite3
+
+    db_path = str(tmp_trace_dir["db"])
+
+    # Create a v3 database manually
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            current_path TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        INSERT INTO metadata (key, value) VALUES ('schema_version', '3');
+
+        INSERT INTO projects (id, name, current_path)
+        VALUES ('github.com/user/repo', 'repo', '/path/to/repo');
+    """)
+    conn.commit()
+    conn.close()
+
+    # Now initialize with migration
+    from trc_main import init_database
+    db = init_database(db_path)
+
+    # Check project was preserved
+    cursor = db.execute("SELECT id, name, current_path FROM projects WHERE id = 'github.com/user/repo'")
+    row = cursor.fetchone()
+    assert row is not None
+    assert row[0] == "github.com/user/repo"
+    assert row[1] == "repo"
+    assert row[2] == "/path/to/repo"
+
+    # Check uuid column exists and is NULL for existing projects
+    cursor = db.execute("SELECT uuid FROM projects WHERE id = 'github.com/user/repo'")
+    row = cursor.fetchone()
+    assert row is not None
+    # UUID should be NULL initially (will be set when project is synced)
+
+
+def test_init_db_creates_uuid_index(tmp_trace_dir):
+    """Should create index on projects.uuid for efficient lookups."""
+    from trc_main import init_database
+
+    db = init_database(str(tmp_trace_dir["db"]))
+
+    cursor = db.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name"
+    )
+    indexes = [row[0] for row in cursor.fetchall()]
+
+    assert "idx_projects_uuid" in indexes

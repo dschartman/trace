@@ -187,8 +187,18 @@ def repair_contaminated_issues(
         if not expected_project_name:
             continue  # Malformed ID, skip
 
-        # Get current project name
-        current_project_name = extract_project_name_from_id(current_project_id)
+        # Get current project name from database (handles UUID-based project_id)
+        # First try looking up by UUID
+        cursor2 = db.execute(
+            "SELECT name FROM projects WHERE uuid = ?",
+            (current_project_id,)
+        )
+        row = cursor2.fetchone()
+        if row:
+            current_project_name = row[0]
+        else:
+            # Fall back to extracting from project_id (for backward compat with URL/path)
+            current_project_name = extract_project_name_from_id(current_project_id)
 
         # Check if issue belongs to current project
         if validate_issue_belongs_to_project(issue_id, current_project_name):

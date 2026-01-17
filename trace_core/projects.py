@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from trace_core.utils import sanitize_project_name
+from trace_core.utils import sanitize_project_name, get_project_uuid
 
 __all__ = [
     "detect_project",
@@ -17,25 +17,27 @@ __all__ = [
 ]
 
 
-def detect_project(cwd: Optional[str] = None) -> Optional[Dict[str, str]]:
+def detect_project(cwd: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Detect project from git repository.
 
     Walks up directory tree from current working directory to find .git,
     then extracts project name and ID from git remote or directory name.
+    Also reads project UUID from .trace/id file if it exists.
 
     Args:
         cwd: Optional current working directory (defaults to os.getcwd())
 
     Returns:
-        Dict with 'id', 'name', and 'path' keys, or None if not in a git repo
+        Dict with 'id', 'name', 'path', and 'uuid' keys, or None if not in a git repo
         - id: Git remote URL (e.g., 'github.com/user/repo') or absolute path for local-only repos
         - name: Project name (extracted from remote or directory name)
         - path: Absolute path to project directory
+        - uuid: Project UUID from .trace/id file, or None if not yet initialized
 
     Example:
         >>> project = detect_project()
         >>> if project:
-        ...     print(f"{project['name']} (id: {project['id']}) at {project['path']}")
+        ...     print(f"{project['name']} (uuid: {project['uuid']}) at {project['path']}")
     """
     if cwd is None:
         cwd = os.getcwd()
@@ -65,7 +67,11 @@ def detect_project(cwd: Optional[str] = None) -> Optional[Dict[str, str]]:
             # Sanitize the project name
             project_name = sanitize_project_name(project_name)
 
-            return {"id": project_id, "name": project_name, "path": project_path}
+            # Read UUID from .trace/id file if it exists
+            trace_dir = parent / ".trace"
+            project_uuid = get_project_uuid(trace_dir)
+
+            return {"id": project_id, "name": project_name, "path": project_path, "uuid": project_uuid}
 
     # Not in a git repository
     return None
@@ -189,16 +195,40 @@ def get_project_path(db: sqlite3.Connection, project_id: str) -> Optional[str]:
 
     Args:
         db: Database connection
-        project_id: Project ID (URL or path)
+        project_id: Project ID (UUID, URL, or path)
 
     Returns:
         Filesystem path, or None if not found
 
     Notes:
-        - Looks up current_path from projects table
+        - First tries lookup by UUID (new format)
+        - Falls back to lookup by id (URL/path) for backward compat
         - Falls back to project_id if it looks like a path (backward compat)
         - Detects and repairs corrupted current_path (URL instead of filesystem path)
     """
+    # First try looking up by UUID
+    cursor = db.execute(
+        "SELECT current_path FROM projects WHERE uuid = ?",
+        (project_id,)
+    )
+    row = cursor.fetchone()
+    if row:
+        current_path = row[0]
+        if os.path.isabs(current_path):
+            return current_path
+        # current_path is corrupted - try to recover by checking CWD
+        cwd_project = detect_project()
+        if cwd_project and cwd_project["uuid"] == project_id:
+            # CWD is this project - repair the DB and return correct path
+            correct_path = cwd_project["path"]
+            db.execute(
+                "UPDATE projects SET current_path = ? WHERE uuid = ?",
+                (correct_path, project_id)
+            )
+            db.commit()
+            return correct_path
+
+    # Fall back to looking up by id (URL/path) for backward compat
     cursor = db.execute(
         "SELECT current_path FROM projects WHERE id = ?",
         (project_id,)

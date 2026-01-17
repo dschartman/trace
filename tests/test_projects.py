@@ -231,3 +231,67 @@ def test_detect_project_nested_git_repos(tmp_path):
         assert project["path"] == str(inner.absolute())
     finally:
         os.chdir(original_cwd)
+
+
+def test_detect_project_reads_uuid_from_trace_id(sample_project):
+    """detect_project should read UUID from .trace/id file if it exists."""
+    from trc_main import detect_project
+
+    # Write a UUID to .trace/id
+    id_file = sample_project["trace_dir"] / "id"
+    test_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    id_file.write_text(test_uuid + "\n")
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(sample_project["path"])
+        project = detect_project()
+
+        assert project is not None
+        assert "uuid" in project
+        assert project["uuid"] == test_uuid
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_detect_project_returns_none_uuid_when_no_trace_id(sample_project):
+    """detect_project should return None for uuid when .trace/id doesn't exist."""
+    from trc_main import detect_project
+
+    # Make sure no .trace/id file exists (delete if sample_project fixture created one)
+    id_file = sample_project["trace_dir"] / "id"
+    if id_file.exists():
+        id_file.unlink()
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(sample_project["path"])
+        project = detect_project()
+
+        assert project is not None
+        assert "uuid" in project
+        assert project["uuid"] is None
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_detect_project_returns_none_uuid_when_no_trace_dir(tmp_path):
+    """detect_project should return None for uuid when .trace directory doesn't exist."""
+    from trc_main import detect_project
+
+    # Create git repo without .trace directory
+    project_path = tmp_path / "no-trace-dir"
+    project_path.mkdir()
+    git_dir = project_path / ".git"
+    git_dir.mkdir()
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(str(project_path))
+        project = detect_project()
+
+        assert project is not None
+        assert "uuid" in project
+        assert project["uuid"] is None
+    finally:
+        os.chdir(original_cwd)

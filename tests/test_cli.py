@@ -38,6 +38,77 @@ def test_cli_init_outside_git_repo(tmp_path, tmp_trace_dir, monkeypatch):
     assert result.exit_code == 1  # Error code
 
 
+def test_cli_init_generates_uuid(sample_project, tmp_trace_dir, monkeypatch):
+    """init command should generate and store UUID in .trace/id file."""
+    import uuid as uuid_module
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    result = runner.invoke(app, ["init"])
+
+    assert result.exit_code == 0
+
+    # Check .trace/id file exists and contains valid UUID
+    id_file = sample_project["trace_dir"] / "id"
+    assert id_file.exists()
+    uuid_content = id_file.read_text().strip()
+    # Should be valid UUID
+    parsed = uuid_module.UUID(uuid_content)
+    assert parsed.version == 4
+
+
+def test_cli_init_stores_uuid_in_database(sample_project, tmp_trace_dir, monkeypatch):
+    """init command should store UUID in projects table."""
+    from trc_main import get_db
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 0
+
+    # Read UUID from file
+    id_file = sample_project["trace_dir"] / "id"
+    stored_uuid = id_file.read_text().strip()
+
+    # Check database has the UUID
+    db = get_db()
+    cursor = db.execute("SELECT uuid FROM projects WHERE name = ?", ("myapp",))
+    row = cursor.fetchone()
+    db.close()
+
+    assert row is not None
+    assert row[0] == stored_uuid
+
+
+def test_cli_init_preserves_existing_uuid(sample_project, tmp_trace_dir, monkeypatch):
+    """init command should preserve existing UUID if .trace/id already exists."""
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    # Pre-create UUID file
+    id_file = sample_project["trace_dir"] / "id"
+    existing_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    id_file.write_text(existing_uuid + "\n")
+
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 0
+
+    # UUID should be preserved
+    assert id_file.read_text().strip() == existing_uuid
+
+
+def test_cli_init_displays_uuid(sample_project, tmp_trace_dir, monkeypatch):
+    """init command should display UUID in output."""
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    result = runner.invoke(app, ["init"])
+
+    assert result.exit_code == 0
+    # Output should mention UUID
+    assert "UUID:" in result.output
+
+
 def test_cli_create_basic_issue(sample_project, tmp_trace_dir, monkeypatch):
     """cli_create should create issue with title."""
     runner = CliRunner()
@@ -51,6 +122,38 @@ def test_cli_create_basic_issue(sample_project, tmp_trace_dir, monkeypatch):
     assert result.exit_code == 0
     assert "Created" in result.output
     assert "Test issue" in result.output
+
+
+def test_cli_create_stores_uuid_as_project_id(sample_project, tmp_trace_dir, monkeypatch):
+    """cli_create should store UUID as project_id in database."""
+    import uuid as uuid_module
+    from trc_main import get_db
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 0
+
+    # Read UUID from .trace/id
+    id_file = sample_project["trace_dir"] / "id"
+    stored_uuid = id_file.read_text().strip()
+    # Verify it's a valid UUID
+    uuid_module.UUID(stored_uuid)
+
+    result = runner.invoke(app, ["create", "Test issue", "--description", ""])
+    assert result.exit_code == 0
+
+    # Extract issue ID
+    issue_id = extract_issue_id(result.output)
+
+    # Check database - project_id should be the UUID
+    db = get_db()
+    cursor = db.execute("SELECT project_id FROM issues WHERE id = ?", (issue_id,))
+    row = cursor.fetchone()
+    db.close()
+
+    assert row is not None
+    assert row[0] == stored_uuid
 
 
 def test_cli_create_with_parent(sample_project, tmp_trace_dir, monkeypatch):
@@ -131,6 +234,31 @@ def test_cli_show_displays_issue_details(sample_project, tmp_trace_dir, monkeypa
     assert "Test issue" in result.output
     assert "Status:" in result.output
     assert "Priority:" in result.output
+
+
+def test_cli_show_displays_project_name_and_uuid(sample_project, tmp_trace_dir, monkeypatch):
+    """cli_show should display project name and UUID."""
+    import uuid as uuid_module
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Get UUID from .trace/id
+    id_file = sample_project["trace_dir"] / "id"
+    project_uuid = id_file.read_text().strip()
+
+    result = runner.invoke(app, ["create", "Test issue", "--description", ""])
+    issue_id = extract_issue_id(result.output)
+
+    result = runner.invoke(app, ["show", issue_id])
+
+    assert result.exit_code == 0
+    # Should show project name and UUID
+    assert "myapp" in result.output
+    assert project_uuid in result.output
+    # Should NOT show absolute path
+    assert sample_project["path"] not in result.output
 
 
 def test_cli_show_nonexistent_issue(sample_project, tmp_trace_dir, monkeypatch):
@@ -1311,8 +1439,9 @@ def test_cli_create_with_project_flag(sample_project, tmp_trace_dir, tmp_path, m
     issue = get_issue(db, issue_id)
     assert issue is not None
     assert issue["title"] == "Issue for proj2"
-    # New behavior: project_id is URL, not path
-    assert issue["project_id"] == "github.com/test/proj2"
+    # New behavior: project_id is UUID
+    import uuid as uuid_module
+    uuid_module.UUID(issue["project_id"])  # Should be valid UUID
     assert issue["id"].startswith("proj2-")
     db.close()
 
@@ -1365,8 +1494,9 @@ def test_cli_create_with_project_flag_outside_git_repo(sample_project, tmp_trace
     issue = get_issue(db, issue_id)
     assert issue is not None
     assert issue["title"] == "Issue from nowhere"
-    # New behavior: project_id is URL from git remote
-    assert issue["project_id"] == "github.com/user/myapp"
+    # New behavior: project_id is UUID
+    import uuid as uuid_module
+    uuid_module.UUID(issue["project_id"])  # Should be valid UUID
     db.close()
 
 
@@ -1418,8 +1548,9 @@ def test_cli_create_with_project_flag_and_parent(sample_project, tmp_trace_dir, 
     db = get_db()
     issue = get_issue(db, child_id)
     assert issue is not None
-    # New behavior: project_id is URL, not path
-    assert issue["project_id"] == "github.com/test/proj2"
+    # New behavior: project_id is UUID
+    import uuid as uuid_module
+    uuid_module.UUID(issue["project_id"])  # Should be valid UUID
 
     deps = get_dependencies(db, child_id)
     parent_deps = [d for d in deps if d["type"] == "parent"]
@@ -1771,11 +1902,16 @@ def test_cli_update_recovers_from_corrupted_project_path(sample_project, tmp_tra
     assert result.exit_code == 0
     issue_id = extract_issue_id(result.output)
 
-    # Simulate corruption: set current_path to a URL instead of filesystem path
+    # Get the issue's project_id (which is now UUID)
     db = get_db()
+    cursor = db.execute("SELECT project_id FROM issues WHERE id = ?", (issue_id,))
+    row = cursor.fetchone()
+    project_uuid = row[0]
+
+    # Simulate corruption: set current_path to a URL instead of filesystem path
     db.execute(
-        "UPDATE projects SET current_path = ? WHERE id = ?",
-        ("github.com/wrong/project", "github.com/test/myproject")
+        "UPDATE projects SET current_path = ? WHERE uuid = ?",
+        ("github.com/wrong/project", project_uuid)
     )
     db.commit()
     db.close()
@@ -1814,11 +1950,16 @@ def test_cli_close_recovers_from_corrupted_project_path(sample_project, tmp_trac
     assert result.exit_code == 0
     issue_id = extract_issue_id(result.output)
 
-    # Simulate corruption: set current_path to a URL instead of filesystem path
+    # Get the issue's project_id (which is now UUID)
     db = get_db()
+    cursor = db.execute("SELECT project_id FROM issues WHERE id = ?", (issue_id,))
+    row = cursor.fetchone()
+    project_uuid = row[0]
+
+    # Simulate corruption: set current_path to a URL instead of filesystem path
     db.execute(
-        "UPDATE projects SET current_path = ? WHERE id = ?",
-        ("github.com/wrong/project", "github.com/test/myproject")
+        "UPDATE projects SET current_path = ? WHERE uuid = ?",
+        ("github.com/wrong/project", project_uuid)
     )
     db.commit()
     db.close()
@@ -1999,3 +2140,177 @@ def test_cli_repair_project_not_found(sample_project, tmp_trace_dir, monkeypatch
 
     assert result.exit_code == 1
     assert "not found" in result.output.lower()
+
+
+# ============================================
+# Close with comment tests
+# ============================================
+
+
+def test_cli_close_with_message_adds_comment(sample_project, tmp_trace_dir, monkeypatch):
+    """close --message should add a comment to the issue when closing."""
+    from trc_main import get_db, get_issue, get_comments
+
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create an issue
+    result = runner.invoke(app, ["create", "Test issue", "--description", ""])
+    issue_id = extract_issue_id(result.output)
+
+    # Close with a message
+    result = runner.invoke(app, ["close", issue_id, "--message", "Fixed the bug"])
+
+    assert result.exit_code == 0
+
+    # Verify issue is closed and has a comment
+    db = get_db()
+    issue = get_issue(db, issue_id)
+    assert issue is not None
+    assert issue["status"] == "closed"
+    assert issue["closed_at"] is not None
+
+    comments = get_comments(db, issue_id)
+    assert len(comments) == 1
+    assert comments[0]["content"] == "Fixed the bug"
+    assert comments[0]["source"] == "user"  # default source
+    db.close()
+
+
+def test_cli_close_batch_with_message_adds_comment_to_all(
+    sample_project, tmp_trace_dir, monkeypatch
+):
+    """close --message should add same comment to all closed issues in batch."""
+    from trc_main import get_db, get_issue, get_comments
+
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create three issues
+    result1 = runner.invoke(app, ["create", "Issue 1", "--description", ""])
+    issue_id1 = extract_issue_id(result1.output)
+
+    result2 = runner.invoke(app, ["create", "Issue 2", "--description", ""])
+    issue_id2 = extract_issue_id(result2.output)
+
+    result3 = runner.invoke(app, ["create", "Issue 3", "--description", ""])
+    issue_id3 = extract_issue_id(result3.output)
+
+    # Close all three with a message
+    result = runner.invoke(
+        app, ["close", issue_id1, issue_id2, issue_id3, "--message", "Batch fix applied"]
+    )
+
+    assert result.exit_code == 0
+
+    # Verify all are closed with comments
+    db = get_db()
+    for issue_id in [issue_id1, issue_id2, issue_id3]:
+        issue = get_issue(db, issue_id)
+        assert issue is not None
+        assert issue["status"] == "closed"
+
+        comments = get_comments(db, issue_id)
+        assert len(comments) == 1
+        assert comments[0]["content"] == "Batch fix applied"
+    db.close()
+
+
+def test_cli_close_with_message_and_custom_source(
+    sample_project, tmp_trace_dir, monkeypatch
+):
+    """close --message --source should use the custom source identifier."""
+    from trc_main import get_db, get_comments
+
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create an issue
+    result = runner.invoke(app, ["create", "Test issue", "--description", ""])
+    issue_id = extract_issue_id(result.output)
+
+    # Close with a message and custom source
+    result = runner.invoke(
+        app,
+        ["close", issue_id, "--message", "Completed by executor", "--source", "executor"],
+    )
+
+    assert result.exit_code == 0
+
+    # Verify comment has custom source
+    db = get_db()
+    comments = get_comments(db, issue_id)
+    assert len(comments) == 1
+    assert comments[0]["content"] == "Completed by executor"
+    assert comments[0]["source"] == "executor"
+    db.close()
+
+
+def test_cli_close_with_message_exports_comment_to_jsonl(
+    sample_project, tmp_trace_dir, monkeypatch
+):
+    """close --message should export the comment to JSONL."""
+    import json
+
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create an issue
+    result = runner.invoke(app, ["create", "Test issue", "--description", ""])
+    issue_id = extract_issue_id(result.output)
+
+    # Close with a message
+    runner.invoke(app, ["close", issue_id, "--message", "All tests passing"])
+
+    # Check JSONL file contains the comment
+    jsonl_path = sample_project["trace_dir"] / "issues.jsonl"
+    assert jsonl_path.exists()
+
+    with jsonl_path.open("r") as f:
+        for line in f:
+            issue_data = json.loads(line)
+            if issue_data["id"] == issue_id:
+                assert "comments" in issue_data
+                assert len(issue_data["comments"]) == 1
+                assert issue_data["comments"][0]["content"] == "All tests passing"
+                assert issue_data["comments"][0]["source"] == "user"
+                break
+        else:
+            pytest.fail(f"Issue {issue_id} not found in JSONL")
+
+
+def test_cli_close_without_message_still_works(sample_project, tmp_trace_dir, monkeypatch):
+    """close without --message should work as before (backwards compatibility)."""
+    from trc_main import get_db, get_issue, get_comments
+
+    runner = CliRunner()
+    monkeypatch.chdir(sample_project["path"])
+
+    runner.invoke(app, ["init"])
+
+    # Create an issue
+    result = runner.invoke(app, ["create", "Test issue", "--description", ""])
+    issue_id = extract_issue_id(result.output)
+
+    # Close without message
+    result = runner.invoke(app, ["close", issue_id])
+
+    assert result.exit_code == 0
+
+    # Verify issue is closed but has no comments
+    db = get_db()
+    issue = get_issue(db, issue_id)
+    assert issue is not None
+    assert issue["status"] == "closed"
+
+    comments = get_comments(db, issue_id)
+    assert len(comments) == 0
+    db.close()

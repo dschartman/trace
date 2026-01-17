@@ -35,7 +35,8 @@ PROJECTS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,           -- Remote URL (e.g., github.com/user/repo) or absolute path
     name TEXT NOT NULL,            -- Project name
-    current_path TEXT NOT NULL     -- Absolute path to current location
+    current_path TEXT NOT NULL,    -- Absolute path to current location
+    uuid TEXT                      -- Stable UUID from .trace/id file (NULL until populated)
 );
 """
 
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS comments (
 """
 
 # SQL for creating indexes
+# Note: idx_projects_uuid is created in _migrate_schema_v3_to_v4 or during fresh init
 INDEXES_SQL = """
 CREATE INDEX IF NOT EXISTS idx_issues_project ON issues(project_id);
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
@@ -86,7 +88,7 @@ CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(issue_id);
 """
 
 # Current schema version
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def get_trace_home() -> Path:
@@ -175,6 +177,8 @@ def init_database(db_path: str) -> sqlite3.Connection:
             "INSERT INTO metadata (key, value) VALUES ('schema_version', ?)",
             (str(SCHEMA_VERSION),)
         )
+        # Create uuid index for fresh databases
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_uuid ON projects(uuid)")
         conn.commit()
     else:
         # Check if migration is needed
@@ -189,6 +193,11 @@ def init_database(db_path: str) -> sqlite3.Connection:
         if version == 2:
             # Migrate from schema version 2 to 3
             _migrate_schema_v2_to_v3(conn)
+            version = 3
+
+        if version == 3:
+            # Migrate from schema version 3 to 4
+            _migrate_schema_v3_to_v4(conn)
 
     return conn
 
@@ -258,4 +267,30 @@ def _migrate_schema_v2_to_v3(conn: sqlite3.Connection) -> None:
 
     # Update schema version
     conn.execute("UPDATE metadata SET value = '3' WHERE key = 'schema_version'")
+    conn.commit()
+
+
+def _migrate_schema_v3_to_v4(conn: sqlite3.Connection) -> None:
+    """Migrate database schema from version 3 to version 4.
+
+    Changes:
+    - Add uuid column to projects table for UUID-based project identification
+    - Add index on projects.uuid for efficient lookups
+
+    Args:
+        conn: Database connection
+    """
+    # Check if uuid column already exists
+    cursor = conn.execute("PRAGMA table_info(projects)")
+    columns = {row[1] for row in cursor.fetchall()}
+
+    if "uuid" not in columns:
+        # Add uuid column (nullable for existing projects)
+        conn.execute("ALTER TABLE projects ADD COLUMN uuid TEXT")
+
+        # Create index for efficient lookups
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_uuid ON projects(uuid)")
+
+    # Update schema version
+    conn.execute("UPDATE metadata SET value = '4' WHERE key = 'schema_version'")
     conn.commit()

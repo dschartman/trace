@@ -40,7 +40,7 @@ from trace_core.reorganization import (
 )
 from trace_core.contamination import repair_contaminated_issues
 from trace_core.comments import add_comment as _add_comment, get_comments
-from trace_core.utils import file_lock
+from trace_core.utils import file_lock, generate_project_uuid, get_project_uuid, write_project_uuid
 
 __all__ = ["app", "main"]
 
@@ -62,24 +62,30 @@ def init():
     trace_dir = Path(project["path"]) / ".trace"
     trace_dir.mkdir(exist_ok=True)
 
+    # Generate or read UUID for project identification
+    project_uuid = get_project_uuid(trace_dir)
+    if project_uuid is None:
+        # Generate new UUID for this project
+        project_uuid = generate_project_uuid()
+        write_project_uuid(trace_dir, project_uuid)
+
     # Create empty issues.jsonl
     jsonl_path = trace_dir / "issues.jsonl"
     if not jsonl_path.exists():
         jsonl_path.write_text("")
 
-    # Register project in central database (new schema: id, name, current_path)
+    # Register project in central database (with UUID)
     db = get_db()
     db.execute(
-        "INSERT OR REPLACE INTO projects (id, name, current_path) VALUES (?, ?, ?)",
-        (project["id"], project["name"], project["path"]),
+        "INSERT OR REPLACE INTO projects (id, name, current_path, uuid) VALUES (?, ?, ?, ?)",
+        (project["id"], project["name"], project["path"], project_uuid),
     )
     db.commit()
     db.close()
 
     print(f"Initialized trace for project: {project['name']}")
-    print(f"Project ID: {project['id']}")
-    print(f"Path: {project['path']}")
-    print(f"JSONL: {jsonl_path}")
+    print(f"UUID: {project_uuid}")
+    print(f"JSONL: .trace/issues.jsonl")
 
 
 @app.command()
@@ -126,13 +132,23 @@ def create(
     with file_lock(lock_path):
         db = get_db()
 
-        # Sync before operation
+        # Sync before operation (this may auto-generate UUID)
         sync_project(db, project["path"])
 
-        # Create issue (use project["id"] for database)
+        # Re-detect project to get fresh UUID after sync
+        project = detect_project(cwd=project["path"])
+        if project is None or project["uuid"] is None:
+            print("Error: Project UUID not found")
+            print("Run 'trc init' in the project first")
+            db.close()
+            raise typer.Exit(code=1)
+
+        project_uuid = project["uuid"]
+
+        # Create issue (use UUID as project_id)
         issue = _create_issue(
             db,
-            project["id"],  # Use project_id (URL or path)
+            project_uuid,  # Use UUID as project_id
             project["name"],
             title,
             description=description,
@@ -153,11 +169,11 @@ def create(
         if depends_on:
             _add_dependency(db, issue["id"], depends_on, "blocks")
 
-        # Export to JSONL (use project["id"] for database, project["path"] for filesystem)
+        # Export to JSONL (use UUID for database filtering)
         trace_dir = Path(project["path"]) / ".trace"
         jsonl_path = trace_dir / "issues.jsonl"
-        export_to_jsonl(db, project["id"], str(jsonl_path))
-        set_last_sync_time(db, project["id"], time.time())
+        export_to_jsonl(db, project_uuid, str(jsonl_path))
+        set_last_sync_time(db, project_uuid, time.time())
 
         print(f"Created {issue['id']}: {title}")
         if parent:
@@ -204,7 +220,15 @@ def list_cmd(
                 raise typer.Exit(code=1)
 
             sync_project(db, target_project["path"])
-            issues = list_issues(db, project_id=target_project["id"], status=status_filter)
+
+            # Re-detect to get UUID after sync
+            target_project = detect_project(cwd=target_project["path"])
+            if target_project is None or target_project["uuid"] is None:
+                print("Error: Project not properly initialized")
+                db.close()
+                raise typer.Exit(code=1)
+
+            issues = list_issues(db, project_id=target_project["uuid"], status=status_filter)
         else:
             # No --project flag, use current directory
             current_project = detect_project()
@@ -213,11 +237,18 @@ def list_cmd(
                 db.close()
                 raise typer.Exit(code=1)
 
-            # Sync before operation
+            # Sync before operation (may auto-generate UUID)
             sync_project(db, current_project["path"])
 
-            # Use project["id"] for database query
-            issues = list_issues(db, project_id=current_project["id"], status=status_filter)
+            # Re-detect to get fresh UUID after sync
+            current_project = detect_project()
+            if current_project is None or current_project["uuid"] is None:
+                print("Error: Project not properly initialized")
+                db.close()
+                raise typer.Exit(code=1)
+
+            # Use UUID for database query
+            issues = list_issues(db, project_id=current_project["uuid"], status=status_filter)
 
         if not issues:
             print("No issues found")
@@ -270,12 +301,18 @@ def show(issue_id: Annotated[str, typer.Argument(help="Issue ID")]):
         deps = get_dependencies(db, issue_id)
         children = get_children(db, issue_id)
 
+        # Get project name from database
+        project_uuid = issue['project_id']
+        cursor = db.execute("SELECT name FROM projects WHERE uuid = ?", (project_uuid,))
+        row = cursor.fetchone()
+        project_name = row[0] if row else "(unknown)"
+
         # Print issue details
         print(f"ID:          {issue['id']}")
         print(f"Title:       {issue['title']}")
         print(f"Status:      {issue['status']}")
         print(f"Priority:    {issue['priority']}")
-        print(f"Project:     {issue['project_id']}")
+        print(f"Project:     {project_name} ({project_uuid})")
         print(f"Created:     {issue['created_at']}")
         print(f"Updated:     {issue['updated_at']}")
 
@@ -313,7 +350,11 @@ def show(issue_id: Annotated[str, typer.Argument(help="Issue ID")]):
 
 
 @app.command()
-def close(issue_ids: Annotated[list[str], typer.Argument(help="Issue ID(s) to close")]):
+def close(
+    issue_ids: Annotated[list[str], typer.Argument(help="Issue ID(s) to close")],
+    message: Annotated[Optional[str], typer.Option(help="Optional closing comment")] = None,
+    source: Annotated[str, typer.Option(help="Comment source identifier")] = "user",
+):
     """Close one or more issues."""
     lock_path = get_lock_path()
 
@@ -365,6 +406,11 @@ def close(issue_ids: Annotated[list[str], typer.Argument(help="Issue ID(s) to cl
 
             # Close the issue
             _close_issue(db, issue_id)
+
+            # Add optional closing comment
+            if message:
+                _add_comment(db, issue_id, message, source=source)
+
             closed_issues.append((issue_id, issue['title']))
             projects_to_export.add(project_id)
 
@@ -424,7 +470,15 @@ def ready(
                 raise typer.Exit(code=1)
 
             sync_project(db, target_project["path"])
-            issues = list_issues(db, project_id=target_project["id"], status=status_filter)
+
+            # Re-detect to get UUID after sync
+            target_project = detect_project(cwd=target_project["path"])
+            if target_project is None or target_project["uuid"] is None:
+                print("Error: Project not properly initialized")
+                db.close()
+                raise typer.Exit(code=1)
+
+            issues = list_issues(db, project_id=target_project["uuid"], status=status_filter)
         else:
             # No --project flag, use current directory
             current_project = detect_project()
@@ -433,11 +487,18 @@ def ready(
                 db.close()
                 raise typer.Exit(code=1)
 
-            # Sync before operation
+            # Sync before operation (may auto-generate UUID)
             sync_project(db, current_project["path"])
 
-            # Use project["id"] for database query
-            issues = list_issues(db, project_id=current_project["id"], status=status_filter)
+            # Re-detect to get fresh UUID after sync
+            current_project = detect_project()
+            if current_project is None or current_project["uuid"] is None:
+                print("Error: Project not properly initialized")
+                db.close()
+                raise typer.Exit(code=1)
+
+            # Use UUID for database query
+            issues = list_issues(db, project_id=current_project["uuid"], status=status_filter)
 
         if not issues:
             print("No open issues found")
@@ -874,13 +935,21 @@ def move(
             db.close()
             raise typer.Exit(code=1)
 
-        # Get source project info (new schema: id, name, current_path)
+        # Get source project info (project_id is now UUID)
         old_project_id = issue["project_id"]
+        # First try lookup by UUID
         cursor = db.execute(
-            "SELECT current_path FROM projects WHERE id = ?",
+            "SELECT current_path FROM projects WHERE uuid = ?",
             (old_project_id,),
         )
         row = cursor.fetchone()
+        if not row:
+            # Fall back to lookup by id (for backward compat)
+            cursor = db.execute(
+                "SELECT current_path FROM projects WHERE id = ?",
+                (old_project_id,),
+            )
+            row = cursor.fetchone()
         if row:
             old_project_path = row[0]
             # Check if old project is initialized (TRANSACTION SAFETY)
@@ -918,7 +987,6 @@ def move(
             db.close()
             raise typer.Exit(code=1)
 
-        new_project_id = target_project["id"]
         new_project_name = target_project["name"]
         new_project_path = target_project["path"]
 
@@ -929,8 +997,16 @@ def move(
             db.close()
             raise typer.Exit(code=1)
 
-        # Sync target project before operation
+        # Sync target project before operation (may auto-generate UUID)
         sync_project(db, new_project_path)
+
+        # Re-detect to get UUID after sync
+        target_project = detect_project(cwd=new_project_path)
+        if target_project is None or target_project["uuid"] is None:
+            print("Error: Target project not properly initialized")
+            db.close()
+            raise typer.Exit(code=1)
+        new_project_id = target_project["uuid"]
 
         # Move issue
         try:
@@ -952,9 +1028,14 @@ def move(
         export_to_jsonl(db, new_project_id, str(new_jsonl))
         set_last_sync_time(db, new_project_id, time.time())
 
+        # Get old project name for display
+        cursor = db.execute("SELECT name FROM projects WHERE uuid = ?", (old_project_id,))
+        row = cursor.fetchone()
+        old_project_display = row[0] if row else old_project_id
+
         print(f"Moved {issue_id} → {new_id}")
-        print(f"  From: {old_project_id} ({old_project_path})")
-        print(f"  To:   {new_project_id} ({new_project_path})")
+        print(f"  From: {old_project_display}")
+        print(f"  To:   {new_project_name}")
 
         db.close()
 
